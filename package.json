@@ -1,0 +1,60 @@
+{
+    "author": "Roni Jaakkola",
+    "dependencies": {},
+    "keywords": [],
+    "name": "trebble",
+    "pebble": {
+        "displayName": "Trebble",
+        "enableMultiJS": true,
+        "messageKeys": [
+            "stopMessage",
+            "stopCode",
+            "stopName",
+            "stopDist",
+            "messageEnd",
+            "stopNoFound",
+            "lineMessage",
+            "lineCode",
+            "lineTime",
+            "lineNoFound",
+            "noGps",
+            "lineDir"
+        ],
+        "projectType": "native",
+        "resources": {
+            "media": [
+                {
+                    "file": "images/bus-stop.png",
+                    "name": "IMAGE_BUS_STOP",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/error.png",
+                    "name": "IMAGE_ERROR",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/bus.png",
+                    "name": "IMAGE_SPLASH",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                }
+            ]
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "emery"
+        ],
+        "uuid": "77f91099-2bf9-4fe0-b49c-8b3e1a496ad7",
+        "watchapp": {
+            "watchface": false
+        }
+    },
+    "version": "1.4.0"
+}
