@@ -12,3 +12,8 @@ When the stop is chosen, Trebble shows the next departing lines from that stop. 
 
 # Usage
 This app is licenced under a MIT license. You can use it to do pretty much anything you want. The easiest way to modify and build the code is to download the whole source and open it in Pebble's [CloudPebble](https://cloudpebble.net/) platform. Take note that the icons are downloaded from Freepik (see the README file in the resources/images folder).
+
+# Known issues
+**Times are sometimes incorrect during night time**
+
+Some users have reported that bus departure times can be incorrect during night time. For example, 01:00 (AM) can show as 25:00. This is a bug in the Tampere bus API which has been reported to the API maintainer.
