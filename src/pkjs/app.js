@@ -1,5 +1,5 @@
-var apiKey = "pebbletrebusses";
-var apiPassphrase = "bussiaonodotettava";
+var apiKey = "";
+var apiPassphrase = "";
 
 var options = {
   enableHighAccuracy: true,
@@ -28,7 +28,6 @@ function sendNextItem(items, index) {
       // Send next item
       sendNextItem(items, index);
     } else {
-			console.log('JS: Last item sent!');
 			Pebble.sendAppMessage({ messageEnd: 1 });
     }
   }, function() {
@@ -77,8 +76,6 @@ function getStopsFromLocation(pos)
 {
   var response;
 	var crd = pos.coords;
-	console.log('Latitude : ' + crd.latitude);
-  console.log('Longitude: ' + crd.longitude);
 	// URL for emulator testing
   //var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=23.782506,61.498940&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
 	//var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=23.8456284,61.4558978&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
@@ -86,7 +83,6 @@ function getStopsFromLocation(pos)
 	var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=" + crd.longitude + "," + crd.latitude + "&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
 	// URL for testing no stops found
 	//var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=24.940701,60.170826&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
-	console.log(url);
 	
   var req = new XMLHttpRequest();
   req.open('GET', url, true);
@@ -118,8 +114,6 @@ function getDepartingLines(stopCode)
   var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=" + stopCode + "&time_limit=" + timeLimit + "&dep_limit=" + depLimit;
 	// For debugging
 	//var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=3723";
-	
-	console.log(url);
 	
   var req = new XMLHttpRequest();
   req.open('GET', url, true);
