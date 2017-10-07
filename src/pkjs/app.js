@@ -76,13 +76,7 @@ function getStopsFromLocation(pos)
 {
   var response;
 	var crd = pos.coords;
-	// URL for emulator testing
-  //var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=23.782506,61.498940&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
-	//var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=23.8456284,61.4558978&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
-	// URL for running on the watch
 	var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=" + crd.longitude + "," + crd.latitude + "&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
-	// URL for testing no stops found
-	//var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=24.940701,60.170826&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
 	
   var req = new XMLHttpRequest();
   req.open('GET', url, true);
@@ -112,8 +106,6 @@ function getDepartingLines(stopCode)
 {
 	var response;
   var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=" + stopCode + "&time_limit=" + timeLimit + "&dep_limit=" + depLimit;
-	// For debugging
-	//var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=3723";
 	
   var req = new XMLHttpRequest();
   req.open('GET', url, true);
