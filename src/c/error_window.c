@@ -29,7 +29,6 @@ TextLayer *error_new_text_layer()
 	  GRect textPos = GRect(0, 110, 144, 50);
 	#endif
 	
-	//TextLayer *newTextLayer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 110, 144, 50), GRect(20, 110, 144, 50)));
 	TextLayer *newTextLayer = text_layer_create(textPos);
 	#ifdef PBL_COLOR
   	text_layer_set_background_color(newTextLayer, GColorDarkGray);
@@ -61,10 +60,10 @@ void error_window_load(Window *window)
 	#endif
 	
 	errorImage = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_ERROR);
-	//errorImageLayer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(0, 0, 144, 140), GRect(20, 0, 144, 140)));
 	errorImageLayer = bitmap_layer_create(imagePos);
 	bitmap_layer_set_bitmap(errorImageLayer, errorImage);
 	bitmap_layer_set_compositing_mode(errorImageLayer, GCompOpSet);
+	
 	// Get actual Layer from the BitmapLayer and add it to the layer of the window
 	layer_add_child(window_layer, bitmap_layer_get_layer(errorImageLayer));
 	
