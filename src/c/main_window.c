@@ -13,6 +13,7 @@ static struct StopInfo stops[NUM_STOPS];
 	
 void main_window_update_stops(struct StopInfo newStops[NUM_STOPS], int amount)
 {
+	// Update stop array
 	for(int i = 0; i < NUM_STOPS; ++i) {
 		stops[i] = newStops[i];
 	}
@@ -61,7 +62,6 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) 
 {
-	// TODO: Maybe check that the cell_index is within the stop amount?
 	l_loading_window_show(stops[cell_index->row].code, stops[cell_index->row].name);
 }
 
@@ -71,6 +71,7 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 	window_bounds.origin.y = STATUS_BAR_LAYER_HEIGHT;
 	
 	mainMenuLayer = menu_layer_create(window_bounds);
+	// This has to be done slightly differently for Pebble Round
 	menu_layer_set_callbacks(mainMenuLayer, NULL, (MenuLayerCallbacks){
 		#ifdef PBL_RECT
 		 .get_num_sections = menu_get_num_sections_callback,
