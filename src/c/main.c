@@ -16,14 +16,18 @@ void open_main_menu(void *data) {
 
 void init() 
 {
+	// Create all windows
 	splash_window_create();
 	s_loading_window_create();
 	main_window_create();
 	l_loading_window_create();
 	lines_window_create();
 	error_window_create();
+	
+	// Push first screen to the stack
 	window_stack_push(splash_window_get_window(), true);
 	
+	// Timeout to show splash screen only for a limited time
 	app_timer_register(1500, open_main_menu, NULL);
 }
 
