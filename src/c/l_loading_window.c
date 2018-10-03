@@ -118,6 +118,7 @@ void l_setup_loading_layer(Window *window)
 {
 	Layer *window_layer = window_get_root_layer(window);
 	
+	// Take new Pebbles into account
 	#if PBL_ROUND
 	  GRect imagePos = GRect(20, 0, 144, 140);
 	  GRect textPos = GRect(20, 100, 144, 50);
@@ -132,14 +133,12 @@ void l_setup_loading_layer(Window *window)
   window_set_background_color(window, COLOR_FALLBACK(LOADING_BG_COLOR, GColorBlack));
 	
 	loadingImage = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BUS_STOP);
-	//loadingImageLayer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(0, 0, 144, 140), GRect(20, 0, 144, 140)));
 	loadingImageLayer = bitmap_layer_create(imagePos);
 	bitmap_layer_set_bitmap(loadingImageLayer, loadingImage);
 	bitmap_layer_set_compositing_mode(loadingImageLayer, GCompOpSet);
 	// Get actual Layer from the BitmapLayer and add it to the layer of the window
 	layer_add_child(window_layer, bitmap_layer_get_layer(loadingImageLayer));
 	
-	//loadingText = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 100, 144, 50), GRect(20, 100, 144, 50)));
 	loadingText = text_layer_create(textPos);
   text_layer_set_background_color(loadingText, COLOR_FALLBACK(LOADING_BG_COLOR, GColorBlack));
 	text_layer_set_text(loadingText, "Finding next departing busses...");
