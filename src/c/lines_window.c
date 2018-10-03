@@ -13,6 +13,7 @@ static struct LineInfo lines[NUM_LINES];
 	
 void lines_window_update_lines(struct LineInfo newLines[NUM_LINES], int amount, char *name)
 {
+	// Update lines
 	for(int i = 0; i < NUM_LINES; ++i) {
 		lines[i] = newLines[i];
 	}
@@ -67,7 +68,7 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 			else {
 				graphics_context_set_text_color(ctx, GColorBlack);
 			}
-		
+			// Take Round and Pebble 2 into account
 			#ifdef PBL_ROUND
 				graphics_draw_text(ctx, lines[cell_index->row].code, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), GRect(0, 0, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 				graphics_draw_text(ctx, lines[cell_index->row].dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, 24, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
