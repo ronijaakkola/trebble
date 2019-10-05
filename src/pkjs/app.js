@@ -105,10 +105,13 @@ function getStopsFromLocation(pos)
 	req.send(null);
 }
 
+# TODO: Old HTTP GET API has been depricated. We should start using Digitransit API (https://digitransit.fi/en/developers/)
+# NOTE: Data format Digitransit uses is vastly different from the old APIs.
 function getDepartingLines(stopCode) 
 {
 	var response;
-  var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=" + stopCode + "&time_limit=" + timeLimit + "&dep_limit=" + depLimit;
+	# NOTE: Depricated API
+  	var url = "http://api.publictransport.tampere.fi/prod/?request=stop&user=" + apiKey + "&pass=" + apiPassphrase + "&code=" + stopCode + "&time_limit=" + timeLimit + "&dep_limit=" + depLimit;
 	
   var req = new XMLHttpRequest();
   req.open('GET', url, true);
