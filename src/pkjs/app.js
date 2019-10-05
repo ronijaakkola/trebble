@@ -1,3 +1,5 @@
+# TODO: Old HTTP GET API has been depricated. We should start using Digitransit API (https://digitransit.fi/en/developers/)
+
 var apiKey = "";
 var apiPassphrase = "";
 
