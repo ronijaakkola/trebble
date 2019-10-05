@@ -72,10 +72,13 @@ function parseLines(json)
 	return lines;
 }
 
+# TODO: Old HTTP GET API has been depricated. We should start using Digitransit API (https://digitransit.fi/en/developers/)
+# NOTE: Data format Digitransit uses is vastly different from the old APIs.
 function getStopsFromLocation(pos) 
 {
   var response;
 	var crd = pos.coords;
+	# NOTE: Depricated API
 	var url = "http://api.publictransport.tampere.fi/prod/?request=stops_area&user=" + apiKey + "&pass=" + apiPassphrase + "&epsg_in=wgs84&center_coordinate=" + crd.longitude + "," + crd.latitude + "&limit=" + stopsLimit + "&diameter=" + stopSearchDiameter;
 	
   var req = new XMLHttpRequest();
