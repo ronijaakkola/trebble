@@ -1,5 +1,8 @@
 ![trebble](https://github.com/ronijaakkola/trebble/blob/master/screenshots/banner.png)
 
+# NOTE
+**As of October 2019, the current version the city of Tampere has depricated Tampere HTTP GET API (http://api.publictransport.tampere.fi/prod/) and suggest using Digitransit APIs (https://digitransit.fi/en/developers/) instead. There is no backwards compatibility and the API did stop working immediately after the annoucement. Currently this application does not work since it did rely on the old HTTP GET API.**
+
 # About
 Trebble is a Pebble smart watch app for finding the next departing busses in Tampere, Finland. It uses GPS location to find your nearest stops and shows the next lines departing from those stops. This source supports all currently available Pebble models, including the latest Pebble 2 which was the last Pebble smart watch released before Fitbit acquired Pebble.
 
