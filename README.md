@@ -15,9 +15,6 @@ Trebble uses your phone's GPS to locate the nearest bus stops for you. Trebble a
 
 When the stop is chosen, Trebble shows the next departing lines from that stop. By default, Trebble shows the next ten departing lines. From a particular line, the line number and destination is shown. Most importantly, the departure time is shown for each line. Note! Trebble does not use the real time data provided by the Tampere bus API. Because of this it is possible, that the departure times are not always accurate.
 
-# Usage
-This app is licenced under a MIT license. You can use it to do pretty much anything you want. The easiest way to modify and build the code is to download the whole source and open it in Pebble's [CloudPebble](https://cloudpebble.net/) platform. Take note that the icons are downloaded from Freepik (see the README file in the resources/images folder).
-
 # Known issues
 **Times are sometimes incorrect during night time**
 
