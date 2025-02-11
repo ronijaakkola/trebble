@@ -1,4 +1,5 @@
-var apiKey = "";
+const secrets = require('./secrets');
+
 var url = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1";
 
 var options = {
@@ -65,7 +66,7 @@ function getStopsFromLocation(pos) {
   req.open("POST", url, true);
 
   req.setRequestHeader("Content-Type", "application/graphql");
-  req.setRequestHeader("digitransit-subscription-key", apiKey);
+  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
@@ -76,7 +77,6 @@ function getStopsFromLocation(pos) {
           return;
         }
         var response = JSON.parse(req.responseText);
-        console.log(response);
 
         if (response && response.data && response.data.stopsByRadius) {
           var edges = response.data.stopsByRadius.edges;
@@ -133,7 +133,7 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
 
   // Set the required headers
   req.setRequestHeader("Content-Type", "application/graphql");
-  req.setRequestHeader("digitransit-subscription-key", apiKey);
+  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
@@ -191,6 +191,13 @@ function error(err) {
   Pebble.sendAppMessage({ noGps: 1 });
 }
 
+var fakePosition = {
+  coords: {
+    latitude: 61.495,
+    longitude: 23.761,
+  },
+};
+
 function convertSecondsToTime(seconds) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -205,11 +212,14 @@ function convertSecondsToTime(seconds) {
 Pebble.addEventListener("appmessage", function (e) {
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
+    getStopsFromLocation(fakePosition);
+    /*
     navigator.geolocation.getCurrentPosition(
       getStopsFromLocation,
       error,
       options
     );
+	*/
   } else if (e.payload.lineMessage) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
