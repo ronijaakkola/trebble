@@ -8,7 +8,7 @@ static GBitmap *loadingImage;
 static BitmapLayer *loadingImageLayer;
 static TextLayer *loadingText;
 
-char stopCode[5] = {0};
+char stopCode[20] = {0};
 char stopName[30] = {0};
 static bool line_transfer_started;
 static bool line_got_name;
@@ -19,7 +19,7 @@ struct LineInfo lines[NUM_LINES];
 
 void l_loading_window_show(char *code, char *name)
 {
-	strncpy(stopCode, code, 4);
+	strncpy(stopCode, code, 20);
 	strncpy(stopName, name, 30);
 	window_stack_push(l_loading_window_get_window(), true);
 }

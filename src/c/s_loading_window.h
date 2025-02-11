@@ -8,7 +8,7 @@
 #define MAX_OUTBOX_SIZE 64
 
 #define LOADING_BG_COLOR GColorTiffanyBlue
-#define NUM_STOPS 8
+#define NUM_STOPS 10
 
 struct StopInfo {
 	char code[20];

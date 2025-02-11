@@ -1,7 +1,7 @@
 ![trebble](https://github.com/ronijaakkola/trebble/blob/master/screenshots/banner.png)
 
 # NOTE
-**As of October 2019, the current version the city of Tampere has depricated Tampere HTTP GET API (http://api.publictransport.tampere.fi/prod/) and suggest using Digitransit APIs (https://digitransit.fi/en/developers/) instead. There is no backwards compatibility and the API did stop working immediately after the annoucement. Currently this application does not work since it did rely on the old HTTP GET API.**
+If you have not heard the news, [Pebble is back](https://repebble.com/)! To celebrate that, this project will be soon be updated back to working order. 
 
 # About
 Trebble is a Pebble smart watch app for finding the next departing busses in Tampere, Finland. It uses GPS location to find your nearest stops and shows the next lines departing from those stops. This source supports all currently available Pebble models, including the latest Pebble 2 which was the last Pebble smart watch released before Fitbit acquired Pebble.
@@ -14,9 +14,6 @@ Trebble uses your phone's GPS to locate the nearest bus stops for you. Trebble a
 **See the next departing lines**
 
 When the stop is chosen, Trebble shows the next departing lines from that stop. By default, Trebble shows the next ten departing lines. From a particular line, the line number and destination is shown. Most importantly, the departure time is shown for each line. Note! Trebble does not use the real time data provided by the Tampere bus API. Because of this it is possible, that the departure times are not always accurate.
-
-# Usage
-This app is licenced under a MIT license. You can use it to do pretty much anything you want. The easiest way to modify and build the code is to download the whole source and open it in Pebble's [CloudPebble](https://cloudpebble.net/) platform. Take note that the icons are downloaded from Freepik (see the README file in the resources/images folder).
 
 # Known issues
 **Times are sometimes incorrect during night time**
