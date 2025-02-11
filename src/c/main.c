@@ -29,6 +29,8 @@ void init()
 	
 	// Timeout to show splash screen only for a limited time
 	app_timer_register(1500, open_main_menu, NULL);
+
+	APP_LOG(APP_LOG_LEVEL_DEBUG, "HELLO!");
 }
 
 void deinit() 
