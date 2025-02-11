@@ -1,4 +1,4 @@
-const secrets = require('./secrets');
+const secrets = require("./secrets");
 
 var url = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1";
 
@@ -10,10 +10,10 @@ var options = {
 
 // Stop search parameters
 var stopSearchDiameter = 500;
-var stopsLimit = 8;
+var stopsLimit = 10;
 
-// Stop info parameters
-var depLimit = 10;
+// Departure lines info parameters
+var lineLimit = 10;
 var timeLimit = 360;
 
 function sendNextItem(items, index) {
@@ -48,7 +48,7 @@ function getStopsFromLocation(pos) {
 
   var query = `
 	{
-	stopsByRadius(lat: ${crd.latitude}, lon: ${crd.longitude}, radius: ${stopSearchDiameter}, first: 10) {
+	stopsByRadius(lat: ${crd.latitude}, lon: ${crd.longitude}, radius: ${stopSearchDiameter}, first: 20) {
 		edges {
 		node {
 			stop {
@@ -81,15 +81,21 @@ function getStopsFromLocation(pos) {
         if (response && response.data && response.data.stopsByRadius) {
           var edges = response.data.stopsByRadius.edges;
 
-          var stops = edges.map(function (edge) {
-            return {
-              stopMessage: 1,
-              stopCode: edge.node.stop.gtfsId,
-              stopName: edge.node.stop.name,
-              stopDist: edge.node.distance,
-            };
-          });
-          console.log(stops);
+          var stops = edges
+            .filter(function (edge) {
+              // Ignore results which code starts with MATKA. These
+              // seem to be long range bus stops which do not interest us.
+              return !edge.node.stop.gtfsId.startsWith("MATKA:");
+            })
+            .slice(0, stopsLimit)
+            .map(function (edge) {
+              return {
+                stopMessage: 1,
+                stopCode: edge.node.stop.gtfsId,
+                stopName: edge.node.stop.name,
+                stopDist: edge.node.distance,
+              };
+            });
 
           sendList(stops);
         } else {
@@ -109,7 +115,6 @@ function getStopsFromLocation(pos) {
 }
 
 function getDepartingLines(stopCode) {
-
   var query = `
 {
 stop(id: "${stopCode}") {
@@ -147,7 +152,6 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
 
         if (response && response.data && response.data.stop) {
           var stop = response.data.stop;
-          var stopName = stop.name;
           var stoptimes = stop.stoptimesWithoutPatterns;
 
           if (!stoptimes || stoptimes.length === 0) {
@@ -156,7 +160,7 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
             return;
           }
 
-          var lines = stoptimes.map(function (line) {
+          var lines = stoptimes.slice(0, lineLimit).map(function (line) {
             return {
               lineMessage: 1,
               lineCode: line.trip.route.shortName,
@@ -191,13 +195,6 @@ function error(err) {
   Pebble.sendAppMessage({ noGps: 1 });
 }
 
-var fakePosition = {
-  coords: {
-    latitude: 61.495,
-    longitude: 23.761,
-  },
-};
-
 function convertSecondsToTime(seconds) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -212,14 +209,11 @@ function convertSecondsToTime(seconds) {
 Pebble.addEventListener("appmessage", function (e) {
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
-    getStopsFromLocation(fakePosition);
-    /*
     navigator.geolocation.getCurrentPosition(
       getStopsFromLocation,
       error,
       options
     );
-	*/
   } else if (e.payload.lineMessage) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
