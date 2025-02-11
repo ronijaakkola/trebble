@@ -187,7 +187,7 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
 }
 
 Pebble.addEventListener("ready", function (e) {
-  console.log("Javascript component ready");
+  console.log("JS: Javascript component ready");
 });
 
 function error(err) {
