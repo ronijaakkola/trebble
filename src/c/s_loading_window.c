@@ -14,19 +14,19 @@ struct StopInfo stops[NUM_STOPS];
 
 void loading_process_tuple(Tuple *t) 
 {
-	int key = t->key;
+	uint32_t key = t->key;
 
-	if (key == 10001) {
+	if (key == MESSAGE_KEY_stopCode) {
 		char* value = t->value->cstring;
 		strcpy(stops[stop_index].code, value);
 		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %s", key, value);
 	}
-	else if (key == 10002) {
+	else if (key == MESSAGE_KEY_stopName) {
 		char* value = t->value->cstring;
 		strcpy(stops[stop_index].name, value);
 		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %s", key, value);
 	}
-	else if (key == 10003) {
+	else if (key == MESSAGE_KEY_stopDist) {
 		int value = t->value->int32;
 		stops[stop_index].dist = value;
 		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %d", key, value);
@@ -42,14 +42,14 @@ void loading_message_inbox(DictionaryIterator *iter, void *context)
 {
 	Tuple *t = dict_read_first(iter);
 	if (t) {
-		if (t->key == 10000) {
+		if (t->key == MESSAGE_KEY_stopMessage) {
 			if (!stop_transfer_started) {
 				APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Started stop message transfer.");
 				stop_transfer_started = true;
 				stop_index = 0;
 			}
 		}
-		else if (t->key == 10004) {
+		else if (t->key == MESSAGE_KEY_messageEnd) {
 			APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Stop message transfer ended. Total of %d stops were transfered.", stop_index);
 			stop_transfer_started = false;
 			main_window_update_stops(stops, stop_index);
@@ -57,12 +57,12 @@ void loading_message_inbox(DictionaryIterator *iter, void *context)
 			window_stack_push(main_window_get_window(), true);
 			vibes_short_pulse();
 		}
-		else if (t->key == 10005) {
+		else if (t->key == MESSAGE_KEY_stopNoFound) {
 			APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find stops!");
 			error_window_set_error("Was not able to find nearby stops.");
 			error_window_show();
 		}
-		else if (t->key == 10010) {
+		else if (t->key == MESSAGE_KEY_noGps) {
 			APP_LOG(APP_LOG_LEVEL_ERROR, "JS reported that location was not found!");
 			error_window_set_error("Was not able to determine your location.");
 			error_window_show();
@@ -140,7 +140,7 @@ void s_loading_window_load(Window *window)
 		return;
 	}
 	
-	dict_write_uint16(iter, 10000, 1);
+	dict_write_uint16(iter, MESSAGE_KEY_stopMessage, 1);
 	dict_write_end(iter);
 	
 	app_message_outbox_send();

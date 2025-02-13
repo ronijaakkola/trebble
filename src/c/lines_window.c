@@ -74,7 +74,7 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 				graphics_draw_text(ctx, lines[cell_index->row].dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, 24, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 			 	graphics_draw_text(ctx, lines[cell_index->row].time, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(0, 42, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 		  #elif PBL_PLATFORM_EMERY
-		    menu_cell_title_draw(ctx, cell_layer, lines[cell_index->row].code);
+		    	menu_cell_title_draw(ctx, cell_layer, lines[cell_index->row].code);
 				graphics_draw_text(ctx, lines[cell_index->row].dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(3, 23, 140, 88), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 			 	graphics_draw_text(ctx, lines[cell_index->row].time, fonts_get_system_font(FONT_KEY_GOTHIC_24), GRect(135, 0, 62, 20), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 			#else

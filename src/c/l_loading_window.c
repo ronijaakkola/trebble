@@ -26,27 +26,24 @@ void l_loading_window_show(char *code, char *name)
 
 void l_loading_process_tuple(Tuple *t) 
 {
-	int key = t->key;
+	uint16_t key = t->key;
 
-	if (key == 10007) {
+	if (key == MESSAGE_KEY_lineCode) {
 		char* value = t->value->cstring;
-		//strcpy(lines[line_index].code, value);
 		strncpy(lines[line_index].code, value, 10);
 		line_got_name = true;
 	}
-	else if (key == 10008) {
+	else if (key == MESSAGE_KEY_lineTime) {
 		char* value = t->value->cstring;
-		//strcpy(lines[line_index].time, value);
 		strncpy(lines[line_index].time, value, 10);
 		line_got_time = true;
 	}
-	else if (key == 10011) {
+	else if (key == MESSAGE_KEY_lineDir) {
 		char* value = t->value->cstring;
-		//strcpy(lines[line_index].dir, value);
 		strncpy(lines[line_index].dir, value, 30);
 		line_got_dir = true;
 	}
-	else if (key == 10006) {
+	else if (key == MESSAGE_KEY_lineMessage) {
 		return;
 	}
 	else {
@@ -59,7 +56,7 @@ void l_loading_message_inbox(DictionaryIterator *iter, void *context)
 	// TODO: NOTE: Seems that we cannot trust that the keys are in the order we specified.
 	// This is a quick hack to dig the message key from the dictionary but we probably
 	// should do this smarter some day.
-	Tuple *t = dict_find(iter, 10006);
+	Tuple *t = dict_find(iter, MESSAGE_KEY_lineMessage);
 	if (t) {
 		if (!line_transfer_started) {
 			APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Started lines message transfer.");
@@ -71,7 +68,7 @@ void l_loading_message_inbox(DictionaryIterator *iter, void *context)
 		}
 	}
 	else {
-		t = dict_find(iter, 10004);	
+		t = dict_find(iter, MESSAGE_KEY_messageEnd);
 		if (t) {
 			APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Line message transfer ended. Total of %d lines were transfered.", line_index);
 			line_transfer_started = false;
@@ -85,7 +82,7 @@ void l_loading_message_inbox(DictionaryIterator *iter, void *context)
 	
 	t = dict_read_first(iter);
 	if (t) {
-		if (t->key == 10009) {
+		if (t->key == MESSAGE_KEY_lineNoFound) {
 			APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find departing lines!");
 			window_stack_remove(l_loadingWindow, true);
 			error_window_set_error("Was not able to find lines departing soon.");
@@ -166,7 +163,7 @@ void l_loading_window_load(Window *window)
 		return;
 	}
 	
-	dict_write_cstring(iter, 10006, (char *)stopCode);
+	dict_write_cstring(iter, MESSAGE_KEY_lineMessage, (char *)stopCode);
 	dict_write_end(iter);
 	
 	app_message_outbox_send();
