@@ -43,6 +43,14 @@ function sendList(items) {
   sendNextItem(items, index);
 }
 
+function createGraphQLRequest(url) {
+  var req = new XMLHttpRequest();
+  req.open("POST", url, true);
+  req.setRequestHeader("Content-Type", "application/graphql");
+  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  return req;
+}
+
 function getStopsFromLocation(pos) {
   var crd = pos.coords;
 
@@ -62,11 +70,7 @@ function getStopsFromLocation(pos) {
 	}
 	`;
 
-  var req = new XMLHttpRequest();
-  req.open("POST", url, true);
-
-  req.setRequestHeader("Content-Type", "application/graphql");
-  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
@@ -132,13 +136,7 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
 }
 `;
 
-  // Create a new POST request
-  var req = new XMLHttpRequest();
-  req.open("POST", url, true);
-
-  // Set the required headers
-  req.setRequestHeader("Content-Type", "application/graphql");
-  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
