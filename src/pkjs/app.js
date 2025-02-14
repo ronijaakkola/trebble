@@ -169,18 +169,9 @@ function convertSecondsToTime(seconds) {
   return `${paddedHours}:${paddedMinutes}`;
 }
 
-var fakePosition = {
-  coords: {
-    latitude: 61.495,
-    longitude: 23.761,
-  },
-};
-
 Pebble.addEventListener("appmessage", function (e) {
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
-    getStopsFromLocation(fakePosition);
-    /*
     navigator.geolocation.getCurrentPosition(
       getStopsFromLocation,
       (err) => {
@@ -189,7 +180,6 @@ Pebble.addEventListener("appmessage", function (e) {
       },
       geolocationOptions
     );
-    */
   } else if (e.payload.lineMessage) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
