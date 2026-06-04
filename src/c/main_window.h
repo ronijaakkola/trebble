@@ -1,6 +1,6 @@
 #pragma once
 
-#define MENU_HL_COLOR GColorTiffanyBlue
+#define MENU_HL_COLOR GColorLightGray
 
 void main_window_update_stops();
 void main_window_create();

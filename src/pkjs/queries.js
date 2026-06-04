@@ -7,6 +7,7 @@ function createStopsQuery(latitude, longitude, radius, limit) {
         stop {
           gtfsId
           name
+          vehicleMode
         }
         distance
       }
@@ -20,12 +21,13 @@ function createDeparturesQuery(stopCode) {
 {
   stop(id: "${stopCode}") {
     name
-    stoptimesWithoutPatterns(omitNonPickups: true) {
+    stoptimesWithoutPatterns(omitNonPickups: true, numberOfDepartures: 10) {
       scheduledDeparture
       headsign
       trip {
         route {
           shortName
+          mode
         }
       }
     }

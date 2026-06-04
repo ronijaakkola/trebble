@@ -7,6 +7,7 @@ struct LineInfo {
 	char time[10];
 	char code[10];
 	char dir[30];
+	char type[2];
 };
 
 void l_loading_window_show();

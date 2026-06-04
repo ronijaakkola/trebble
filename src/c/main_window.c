@@ -83,7 +83,7 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 		.select_click = menu_select_callback,
 	});
 
-	menu_layer_set_highlight_colors(mainMenuLayer, COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack), GColorWhite);
+	menu_layer_set_highlight_colors(mainMenuLayer, COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
 	menu_layer_set_click_config_onto_window(mainMenuLayer, window);
 
 	layer_add_child(window_layer, menu_layer_get_layer(mainMenuLayer));
