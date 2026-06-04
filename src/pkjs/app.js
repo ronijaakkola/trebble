@@ -9,6 +9,23 @@ var geolocationOptions = {
   maximumAge: 0,
 };
 
+// Fake [lat, lon] used in place of real GPS when running in the emulator
+var debugLocation = [61.50048576694305, 23.785473194189514];
+
+// The emulator reports its model as "qemu_platform_<platform>"; real hardware
+// reports a real model name (e.g. "pebble_black"). Use that to detect the emulator.
+function isEmulator() {
+  if (!Pebble.getActiveWatchInfo) {
+    return false;
+  }
+  try {
+    var model = Pebble.getActiveWatchInfo().model || "";
+    return model.indexOf("qemu_") === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Stop search parameters
 const stopSearchDiameter = 500;
 const stopsLimit = 10;
@@ -172,6 +189,13 @@ function convertSecondsToTime(seconds) {
 Pebble.addEventListener("appmessage", function (e) {
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
+    if (debugLocation && isEmulator()) {
+      console.log("JS: Emulator detected, using debug location: " + debugLocation);
+      getStopsFromLocation({
+        coords: { latitude: debugLocation[0], longitude: debugLocation[1] },
+      });
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       getStopsFromLocation,
       (err) => {
