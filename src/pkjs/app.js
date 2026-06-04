@@ -1,20 +1,37 @@
 const secrets = require("./secrets");
+const queries = require("./queries");
 
 var url = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1";
 
-var options = {
+var geolocationOptions = {
   enableHighAccuracy: true,
   timeout: 5000,
   maximumAge: 0,
 };
 
+// Fake [lat, lon] used in place of real GPS when running in the emulator
+var debugLocation = [61.50048576694305, 23.785473194189514];
+
+// The emulator reports its model as "qemu_platform_<platform>"; real hardware
+// reports a real model name (e.g. "pebble_black"). Use that to detect the emulator.
+function isEmulator() {
+  if (!Pebble.getActiveWatchInfo) {
+    return false;
+  }
+  try {
+    var model = Pebble.getActiveWatchInfo().model || "";
+    return model.indexOf("qemu_") === 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Stop search parameters
-var stopSearchDiameter = 500;
-var stopsLimit = 10;
+const stopSearchDiameter = 500;
+const stopsLimit = 10;
 
 // Departure lines info parameters
-var lineLimit = 10;
-var timeLimit = 360;
+const lineLimit = 10;
 
 function sendNextItem(items, index) {
   // Build message
@@ -22,7 +39,7 @@ function sendNextItem(items, index) {
 
   Pebble.sendAppMessage(
     dict,
-    function () {
+    () => {
       // Use success callback to increment index
       index++;
 
@@ -32,7 +49,7 @@ function sendNextItem(items, index) {
         Pebble.sendAppMessage({ messageEnd: 1 });
       }
     },
-    function () {
+    () => {
       console.log("JS: Item transmission failed at index: " + index);
     }
   );
@@ -43,30 +60,18 @@ function sendList(items) {
   sendNextItem(items, index);
 }
 
-function getStopsFromLocation(pos) {
-  var crd = pos.coords;
-
-  var query = `
-	{
-	stopsByRadius(lat: ${crd.latitude}, lon: ${crd.longitude}, radius: ${stopSearchDiameter}, first: 20) {
-		edges {
-		node {
-			stop {
-			gtfsId
-			name
-			}
-			distance
-		}
-		}
-	}
-	}
-	`;
-
+function createGraphQLRequest(url) {
   var req = new XMLHttpRequest();
   req.open("POST", url, true);
-
   req.setRequestHeader("Content-Type", "application/graphql");
   req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  return req;
+}
+
+function getStopsFromLocation(pos) {
+  var crd = pos.coords;
+  var query = queries.createStopsQuery(crd.latitude, crd.longitude, stopSearchDiameter, 20);
+  var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
@@ -115,30 +120,8 @@ function getStopsFromLocation(pos) {
 }
 
 function getDepartingLines(stopCode) {
-  var query = `
-{
-stop(id: "${stopCode}") {
-name
-stoptimesWithoutPatterns(omitNonPickups: true) {
-  scheduledDeparture
-  headsign
-  trip {
-	route {
-	  shortName
-	}
-  }
-}
-}
-}
-`;
-
-  // Create a new POST request
-  var req = new XMLHttpRequest();
-  req.open("POST", url, true);
-
-  // Set the required headers
-  req.setRequestHeader("Content-Type", "application/graphql");
-  req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  var query = queries.createDeparturesQuery(stopCode);
+  var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
     if (req.readyState === 4) {
@@ -160,12 +143,14 @@ stoptimesWithoutPatterns(omitNonPickups: true) {
             return;
           }
 
-          var lines = stoptimes.slice(0, lineLimit).map(function (line) {
-            return {
-              lineMessage: 1,
-              lineCode: line.trip.route.shortName,
-              lineTime: convertSecondsToTime(line.scheduledDeparture),
-              lineDir: line.headsign,
+          var lines = stoptimes
+            .slice(0, lineLimit)
+            .map((line) => {
+              return {
+                lineMessage: 1,
+                lineCode: line.trip.route.shortName,
+                lineTime: convertSecondsToTime(line.scheduledDeparture),
+                lineDir: line.headsign,
             };
           });
 
@@ -190,11 +175,6 @@ Pebble.addEventListener("ready", function (e) {
   console.log("JS: Javascript component ready");
 });
 
-function error(err) {
-  console.warn("JS: GPS error (" + err.code + "): " + err.message);
-  Pebble.sendAppMessage({ noGps: 1 });
-}
-
 function convertSecondsToTime(seconds) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -209,10 +189,20 @@ function convertSecondsToTime(seconds) {
 Pebble.addEventListener("appmessage", function (e) {
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
+    if (debugLocation && isEmulator()) {
+      console.log("JS: Emulator detected, using debug location: " + debugLocation);
+      getStopsFromLocation({
+        coords: { latitude: debugLocation[0], longitude: debugLocation[1] },
+      });
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       getStopsFromLocation,
-      error,
-      options
+      (err) => {
+        console.warn("JS: GPS error (" + err.code + "): " + err.message);
+        Pebble.sendAppMessage({ noGps: 1 });
+      },
+      geolocationOptions
     );
   } else if (e.payload.lineMessage) {
     console.log(
