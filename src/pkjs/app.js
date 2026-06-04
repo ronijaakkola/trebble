@@ -99,6 +99,7 @@ function getStopsFromLocation(pos) {
                 stopCode: edge.node.stop.gtfsId,
                 stopName: edge.node.stop.name,
                 stopDist: edge.node.distance,
+                stopMode: edge.node.stop.vehicleMode,
               };
             });
 
@@ -151,6 +152,7 @@ function getDepartingLines(stopCode) {
                 lineCode: line.trip.route.shortName,
                 lineTime: convertSecondsToTime(line.scheduledDeparture),
                 lineDir: line.headsign,
+                lineMode: line.trip.route.mode,
             };
           });
 

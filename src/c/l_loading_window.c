@@ -24,7 +24,24 @@ void l_loading_window_show(char *code, char *name)
 	window_stack_push(l_loading_window_get_window(), true);
 }
 
-void l_loading_process_tuple(Tuple *t) 
+// Maps a Digitransit vehicle mode string to a single-letter type indicator.
+// Unknown modes produce an empty string so nothing is shown.
+static void mode_to_type_letter(const char *mode, char *out)
+{
+	if (strcmp(mode, "BUS") == 0) {
+		out[0] = 'B';
+		out[1] = '\0';
+	}
+	else if (strcmp(mode, "TRAM") == 0) {
+		out[0] = 'T';
+		out[1] = '\0';
+	}
+	else {
+		out[0] = '\0';
+	}
+}
+
+void l_loading_process_tuple(Tuple *t)
 {
 	uint16_t key = t->key;
 
@@ -42,6 +59,11 @@ void l_loading_process_tuple(Tuple *t)
 		char* value = t->value->cstring;
 		strncpy(lines[line_index].dir, value, 30);
 		line_got_dir = true;
+	}
+	else if (key == MESSAGE_KEY_lineMode) {
+		// Optional field, so it does not gate completion of a line.
+		char* value = t->value->cstring;
+		mode_to_type_letter(value, lines[line_index].type);
 	}
 	else if (key == MESSAGE_KEY_lineMessage) {
 		return;
@@ -66,6 +88,9 @@ void l_loading_message_inbox(DictionaryIterator *iter, void *context)
 			line_got_dir = false;
 			line_index = 0;
 		}
+		// Clear the optional type for the current line, since a line without a
+		// known mode sends no lineMode key and would otherwise keep a stale value.
+		lines[line_index].type[0] = '\0';
 	}
 	else {
 		t = dict_find(iter, MESSAGE_KEY_messageEnd);

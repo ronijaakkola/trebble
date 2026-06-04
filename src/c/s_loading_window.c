@@ -12,26 +12,41 @@ static bool stop_transfer_started;
 int stop_index;
 struct StopInfo stops[NUM_STOPS];
 
-void loading_process_tuple(Tuple *t) 
+// Maps a Digitransit vehicle mode string to a single-letter type indicator.
+// Unknown modes produce an empty string so no icon is shown.
+static void mode_to_type_letter(const char *mode, char *out)
+{
+	if (strcmp(mode, "BUS") == 0) {
+		out[0] = 'B';
+		out[1] = '\0';
+	}
+	else if (strcmp(mode, "TRAM") == 0) {
+		out[0] = 'T';
+		out[1] = '\0';
+	}
+	else {
+		out[0] = '\0';
+	}
+}
+
+void loading_process_tuple(Tuple *t)
 {
 	uint32_t key = t->key;
 
 	if (key == MESSAGE_KEY_stopCode) {
-		char* value = t->value->cstring;
-		strcpy(stops[stop_index].code, value);
-		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %s", key, value);
+		strcpy(stops[stop_index].code, t->value->cstring);
 	}
 	else if (key == MESSAGE_KEY_stopName) {
-		char* value = t->value->cstring;
-		strcpy(stops[stop_index].name, value);
-		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %s", key, value);
+		strcpy(stops[stop_index].name, t->value->cstring);
 	}
 	else if (key == MESSAGE_KEY_stopDist) {
-		int value = t->value->int32;
-		stops[stop_index].dist = value;
-		//APP_LOG(APP_LOG_LEVEL_INFO, "Received key %d with value %d", key, value);
-		// End of the message read, increment the stop index
-		++stop_index;
+		stops[stop_index].dist = t->value->int32;
+	}
+	else if (key == MESSAGE_KEY_stopMode) {
+		mode_to_type_letter(t->value->cstring, stops[stop_index].type);
+	}
+	else if (key == MESSAGE_KEY_stopMessage) {
+		// Per-stop marker; the index bookkeeping happens in the inbox handler.
 	}
 	else {
 		APP_LOG(APP_LOG_LEVEL_ERROR, "S_LoadingWindow: AppMessage contained obscure key!");
@@ -40,43 +55,49 @@ void loading_process_tuple(Tuple *t)
 
 void loading_message_inbox(DictionaryIterator *iter, void *context)
 {
-	Tuple *t = dict_read_first(iter);
-	if (t) {
-		if (t->key == MESSAGE_KEY_stopMessage) {
-			if (!stop_transfer_started) {
-				APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Started stop message transfer.");
-				stop_transfer_started = true;
-				stop_index = 0;
-			}
+	// Each stop arrives as its own message, tagged with stopMessage. We collect
+	// all of its fields and then advance the index once, so field order within
+	// the message does not matter.
+	if (dict_find(iter, MESSAGE_KEY_stopMessage)) {
+		if (!stop_transfer_started) {
+			APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Started stop message transfer.");
+			stop_transfer_started = true;
+			stop_index = 0;
 		}
-		else if (t->key == MESSAGE_KEY_messageEnd) {
-			APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Stop message transfer ended. Total of %d stops were transfered.", stop_index);
-			stop_transfer_started = false;
-			main_window_update_stops(stops, stop_index);
-			window_stack_remove(loadingWindow, true);
-			window_stack_push(main_window_get_window(), true);
-			vibes_short_pulse();
-		}
-		else if (t->key == MESSAGE_KEY_stopNoFound) {
-			APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find stops!");
-			error_window_set_error("Was not able to find nearby stops.");
-			error_window_show();
-		}
-		else if (t->key == MESSAGE_KEY_noGps) {
-			APP_LOG(APP_LOG_LEVEL_ERROR, "JS reported that location was not found!");
-			error_window_set_error("Was not able to determine your location.");
-			error_window_show();
-		}
-		else {
-			// Ignore the rest of the messages
+		if (stop_index >= NUM_STOPS) {
 			return;
 		}
-	}
-	while (t != NULL) {
-		t = dict_read_next(iter);
-		if (t) {
+		// Clear the optional type since a stop without a known mode sends no key.
+		stops[stop_index].type[0] = '\0';
+		for (Tuple *t = dict_read_first(iter); t != NULL; t = dict_read_next(iter)) {
 			loading_process_tuple(t);
 		}
+		++stop_index;
+		return;
+	}
+
+	if (dict_find(iter, MESSAGE_KEY_messageEnd)) {
+		APP_LOG(APP_LOG_LEVEL_INFO, "LoadingWindow: Stop message transfer ended. Total of %d stops were transfered.", stop_index);
+		stop_transfer_started = false;
+		main_window_update_stops(stops, stop_index);
+		window_stack_remove(loadingWindow, true);
+		window_stack_push(main_window_get_window(), true);
+		vibes_short_pulse();
+		return;
+	}
+
+	if (dict_find(iter, MESSAGE_KEY_stopNoFound)) {
+		APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find stops!");
+		error_window_set_error("Was not able to find nearby stops.");
+		error_window_show();
+		return;
+	}
+
+	if (dict_find(iter, MESSAGE_KEY_noGps)) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "JS reported that location was not found!");
+		error_window_set_error("Was not able to determine your location.");
+		error_window_show();
+		return;
 	}
 }
 

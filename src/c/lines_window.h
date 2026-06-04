@@ -1,6 +1,6 @@
 #pragma once
 
-#define MENU_HL_COLOR GColorTiffanyBlue
+#define LINES_HL_COLOR GColorLightGray
 
 void lines_window_update_lines();
 void lines_window_create();

@@ -11,6 +11,7 @@
             "stopCode",
             "stopName",
             "stopDist",
+            "stopMode",
             "messageEnd",
             "stopNoFound",
             "lineMessage",
@@ -18,7 +19,8 @@
             "lineTime",
             "lineNoFound",
             "noGps",
-            "lineDir"
+            "lineDir",
+            "lineMode"
         ],
         "projectType": "native",
         "resources": {
@@ -38,6 +40,18 @@
                 {
                     "file": "images/bus.png",
                     "name": "IMAGE_SPLASH",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/bus-icon.png",
+                    "name": "IMAGE_BUS_ICON",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/tram-icon.png",
+                    "name": "IMAGE_TRAM_ICON",
                     "targetPlatforms": null,
                     "type": "bitmap"
                 }
