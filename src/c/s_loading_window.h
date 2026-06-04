@@ -14,6 +14,7 @@ struct StopInfo {
 	char code[20];
 	char name[30];
 	int dist;
+	char type[2];
 };
 
 void s_loading_window_create();
