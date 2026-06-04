@@ -7,8 +7,6 @@
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
 static StatusBarLayer *statusLayer;
-static GBitmap *busIcon;
-static GBitmap *tramIcon;
 
 static int stopAmount = 0;
 static struct StopInfo stops[NUM_STOPS];
@@ -71,25 +69,15 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Type icon inside a colored circle on the left. Bus is blue, tram red; on
-	// black-and-white watches both fall back to a black circle with a white glyph.
+	// Colored type dot on the left: bus is blue, tram red. On black-and-white
+	// watches both fall back to black. Unknown types get no dot.
 	int16_t cy = bounds.size.h / 2;
-	GColor circle_color = GColorBlack;
-	GBitmap *icon = NULL;
-	if (stop->type[0] == 'B') {
-		circle_color = COLOR_FALLBACK(GColorCobaltBlue, GColorBlack);
-		icon = busIcon;
-	}
-	else if (stop->type[0] == 'T') {
-		circle_color = COLOR_FALLBACK(GColorRed, GColorBlack);
-		icon = tramIcon;
-	}
-
-	graphics_context_set_fill_color(ctx, circle_color);
-	graphics_fill_circle(ctx, GPoint(16, cy), 12);
-	if (icon) {
-		graphics_context_set_compositing_mode(ctx, GCompOpSet);
-		graphics_draw_bitmap_in_rect(ctx, icon, GRect(9, cy - 7, 14, 14));
+	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
+		GColor circle_color = stop->type[0] == 'B'
+			? COLOR_FALLBACK(GColorCobaltBlue, GColorBlack)
+			: COLOR_FALLBACK(GColorRed, GColorBlack);
+		graphics_context_set_fill_color(ctx, circle_color);
+		graphics_fill_circle(ctx, GPoint(16, cy-4), 12);
 	}
 
 	int16_t text_x = 34;
@@ -137,9 +125,6 @@ void main_window_load(Window *window)
 {
 	Layer *window_layer = window_get_root_layer(window);
 
-	busIcon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BUS_ICON);
-	tramIcon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_TRAM_ICON);
-
 	setup_menu_layer(window, window_layer);
 
 	statusLayer = status_bar_layer_create();
@@ -154,8 +139,6 @@ void main_window_unload(Window *window)
 {
 	menu_layer_destroy(mainMenuLayer);
 	status_bar_layer_destroy(statusLayer);
-	gbitmap_destroy(busIcon);
-	gbitmap_destroy(tramIcon);
 }
 
 void main_window_create()
