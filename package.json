@@ -22,7 +22,13 @@
             "lineDir",
             "lineMode",
             "lineRealtime",
-            "lineMins"
+            "lineMins",
+            "favMessage",
+            "favCode",
+            "favName",
+            "favDist",
+            "favMode",
+            "favNoFound"
         ],
         "projectType": "native",
         "resources": {
