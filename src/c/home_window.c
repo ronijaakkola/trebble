@@ -1,6 +1,8 @@
 #include <pebble.h>
 #include "home_window.h"
 #include "main_window.h"
+#include "favorites.h"
+#include "favorites_window.h"
 
 static Window *homeWindow;
 static MenuLayer *homeMenuLayer;
@@ -14,10 +16,12 @@ struct HomeItem {
 };
 
 #define NUM_HOME_ITEMS 2
+#define HOME_ROW_NEARBY 0
+#define HOME_ROW_FAVORITES 1
 
 static struct HomeItem home_items[NUM_HOME_ITEMS] = {
 	{ "Nearby stops", "" },
-	{ "Favorites", "0 saved" },
+	{ "Favorites", "" }, // subtitle is filled in at draw time from the live count
 };
 
 uint16_t home_menu_get_num_sections_callback(MenuLayer *menu_layer, void *data)
@@ -64,6 +68,15 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 	struct HomeItem *item = &home_items[cell_index->row];
 	GRect bounds = layer_get_bounds(cell_layer);
 
+	// The Favorites subtitle reflects how many stops are currently saved.
+	char fav_subtitle[20];
+	const char *subtitle = item->subtitle;
+	if (cell_index->row == HOME_ROW_FAVORITES) {
+		int count = favorites_count();
+		snprintf(fav_subtitle, sizeof(fav_subtitle), "%d saved", count);
+		subtitle = fav_subtitle;
+	}
+
 	#ifdef PBL_COLOR
 		GColor title_color = GColorBlack;
 		GColor subtitle_color = GColorDarkGray;
@@ -78,11 +91,11 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 
 	graphics_context_set_text_color(ctx, title_color);
 
-	if (item->subtitle[0] != '\0') {
+	if (subtitle[0] != '\0') {
 		// Title above the midline, subtitle below it.
 		graphics_draw_text(ctx, item->title, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 21, text_w, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 		graphics_context_set_text_color(ctx, subtitle_color);
-		graphics_draw_text(ctx, item->subtitle, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(text_x, cy + 1, text_w, 18), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+		graphics_draw_text(ctx, subtitle, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(text_x, cy + 1, text_w, 18), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 	} else {
 		// No subtitle: vertically center the title.
 		graphics_draw_text(ctx, item->title, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 13, text_w, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
@@ -92,11 +105,13 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 void home_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 	switch (cell_index->row) {
-		case 0:
+		case HOME_ROW_NEARBY:
 			window_stack_push(main_window_get_window(), true);
 			break;
+		case HOME_ROW_FAVORITES:
+			favorites_window_show();
+			break;
 		default:
-			// Favorites (and future items) are not implemented yet.
 			break;
 	}
 }
@@ -138,6 +153,15 @@ void home_window_load(Window *window)
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
 }
 
+// Redraw on reveal so the Favorites count is up to date after the user adds or
+// removes favorites elsewhere.
+void home_window_appear(Window *window)
+{
+	if (homeMenuLayer) {
+		menu_layer_reload_data(homeMenuLayer);
+	}
+}
+
 void home_window_unload(Window *window)
 {
 	menu_layer_destroy(homeMenuLayer);
@@ -149,6 +173,7 @@ void home_window_create()
 	homeWindow = window_create();
 	window_set_window_handlers(homeWindow, (WindowHandlers) {
 		.load = home_window_load,
+		.appear = home_window_appear,
 		.unload = home_window_unload
 	});
 }

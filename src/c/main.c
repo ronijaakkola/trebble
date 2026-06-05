@@ -4,13 +4,18 @@
 #include "main_window.h"
 #include "lines_window.h"
 #include "error_window.h"
+#include "favorites.h"
+#include "favorites_window.h"
+#include "feedback_window.h"
 
 #ifdef LOW_MEMORY_DEVICE
 #define MAX_INBOX_SIZE 512
 #else
 #define MAX_INBOX_SIZE 4096
 #endif
-#define MAX_OUTBOX_SIZE 64
+// Large enough to hold the comma-separated list of favorite stop codes sent when
+// opening the Favorites window.
+#define MAX_OUTBOX_SIZE 256
 
 static void app_message_dropped(AppMessageResult reason, void *context) {
 	APP_LOG(APP_LOG_LEVEL_INFO, "Message dropped, reason: %d", reason);
@@ -26,12 +31,17 @@ void open_home_screen(void *data) {
 
 void init()
 {
+	// Load persisted favorites before any window that reads them is shown.
+	favorites_load();
+
 	// Create all windows
 	splash_window_create();
 	home_window_create();
 	main_window_create();
 	lines_window_create();
 	error_window_create();
+	favorites_window_create();
+	feedback_window_create();
 
 	// Open the AppMessage channel once. The display windows register their own
 	// inbox-received handlers when they load.
@@ -51,6 +61,8 @@ void deinit()
 	main_window_destroy();
 	lines_window_destroy();
 	error_window_destroy();
+	favorites_window_destroy();
+	feedback_window_destroy();
 }
 
 int main()
