@@ -20,7 +20,9 @@
             "lineNoFound",
             "noGps",
             "lineDir",
-            "lineMode"
+            "lineMode",
+            "lineRealtime",
+            "lineMins"
         ],
         "projectType": "native",
         "resources": {

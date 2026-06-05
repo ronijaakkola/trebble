@@ -40,7 +40,7 @@ int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *
 {
 	if(cell_index->section == 0) {
 		#if defined(PBL_ROUND)
-			return 74;
+			return 86; // Extra room for the "X min" line under the time
 		#elif defined(PBL_PLATFORM_EMERY)
 			return 64;
 		#else
@@ -118,6 +118,26 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
+	// Live realtime predictions are shown in green; scheduled times use the
+	// normal text color. On black-and-white watches green falls back to normal.
+	// The highlighted row has a light-gray background, where a medium green is
+	// hard to read, so use a darker green there and the brighter green elsewhere.
+	GColor live_green = menu_cell_layer_is_highlighted(cell_layer) ? GColorDarkGreen : GColorIslamicGreen;
+	GColor time_color = line->realtime ? COLOR_FALLBACK(live_green, text_color) : text_color;
+
+	// "X min" countdown, shown only when the departure is less than 10 minutes
+	// away, regardless of whether realtime info is available.
+	char mins_buf[12];
+	bool show_mins = (line->mins >= 0 && line->mins < 10);
+	if (show_mins) {
+		if (line->mins == 0) {
+			// Departing this minute: "now" reads better than "0 min".
+			snprintf(mins_buf, sizeof(mins_buf), "now");
+		} else {
+			snprintf(mins_buf, sizeof(mins_buf), "%d min", line->mins);
+		}
+	}
+
 	// Take Round and Pebble 2 into account
 	#ifdef PBL_ROUND
 		GFont code_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
@@ -125,17 +145,32 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		draw_code_badge(ctx, line->code, line->type, (180 - bw) / 2, 6, code_font);
 		graphics_context_set_text_color(ctx, text_color);
 		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, 30, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+		graphics_context_set_text_color(ctx, time_color);
 		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(0, 50, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+		if (show_mins) {
+			graphics_context_set_text_color(ctx, text_color);
+			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(0, 70, 180, 16), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+		}
 	#elif PBL_PLATFORM_EMERY
 		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
 		graphics_context_set_text_color(ctx, text_color);
 		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(4, 34, 150, 24), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+		graphics_context_set_text_color(ctx, time_color);
 		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_24), GRect(135, 0, 62, 24), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		if (show_mins) {
+			graphics_context_set_text_color(ctx, text_color);
+			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(135, 28, 62, 20), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		}
 	#else
 		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
 		graphics_context_set_text_color(ctx, text_color);
 		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(4, 34, 136, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+		graphics_context_set_text_color(ctx, time_color);
 		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(78, 0, 62, 21), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		if (show_mins) {
+			graphics_context_set_text_color(ctx, text_color);
+			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(78, 19, 62, 16), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		}
 	#endif
 }
 

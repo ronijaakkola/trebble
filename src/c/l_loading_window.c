@@ -65,6 +65,14 @@ void l_loading_process_tuple(Tuple *t)
 		char* value = t->value->cstring;
 		mode_to_type_letter(value, lines[line_index].type);
 	}
+	else if (key == MESSAGE_KEY_lineRealtime) {
+		// Optional field, so it does not gate completion of a line.
+		lines[line_index].realtime = (t->value->int32 != 0);
+	}
+	else if (key == MESSAGE_KEY_lineMins) {
+		// Optional field, so it does not gate completion of a line.
+		lines[line_index].mins = t->value->int32;
+	}
 	else if (key == MESSAGE_KEY_lineMessage) {
 		return;
 	}
@@ -88,9 +96,11 @@ void l_loading_message_inbox(DictionaryIterator *iter, void *context)
 			line_got_dir = false;
 			line_index = 0;
 		}
-		// Clear the optional type for the current line, since a line without a
-		// known mode sends no lineMode key and would otherwise keep a stale value.
+		// Clear the optional fields for the current line, so a line that omits
+		// an optional key does not keep a stale value from a previous transfer.
 		lines[line_index].type[0] = '\0';
+		lines[line_index].realtime = false;
+		lines[line_index].mins = -1;
 	}
 	else {
 		t = dict_find(iter, MESSAGE_KEY_messageEnd);
