@@ -65,6 +65,18 @@ function createGraphQLRequest(url) {
   req.open("POST", url, true);
   req.setRequestHeader("Content-Type", "application/graphql");
   req.setRequestHeader("digitransit-subscription-key", secrets.API_KEY);
+  // A network-level failure (phone offline, DNS failure, timeout) fires onerror/
+  // ontimeout rather than onload, so it is reported separately from a server that
+  // responded but returned no results. The watch shows the no-internet screen.
+  req.timeout = 8000;
+  req.onerror = function () {
+    console.log("JS: Network error — no internet connection.");
+    Pebble.sendAppMessage({ noInternet: 1 });
+  };
+  req.ontimeout = function () {
+    console.log("JS: Request timed out — no internet connection.");
+    Pebble.sendAppMessage({ noInternet: 1 });
+  };
   return req;
 }
 
