@@ -1,24 +1,149 @@
 #include <pebble.h>
 #include "lines_window.h"
-#include "l_loading_window.h"
+#include "main_window.h"
 #include "error_window.h"
 
 static Window *linesWindow;
 static MenuLayer *lineMenuLayer;
 static StatusBarLayer *statusLayer;
+static TextLayer *loadingLayer;
+static TextLayer *titleLayer;
 
+static char stopCode[20];
 char stopName[30];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
-void lines_window_update_lines(struct LineInfo newLines[NUM_LINES], int amount, char *name)
+static bool line_transfer_started;
+static bool line_got_name;
+static bool line_got_time;
+static bool line_got_dir;
+static int line_index;
+
+void lines_window_show(char *code, char *name)
 {
-	// Update lines
-	for(int i = 0; i < NUM_LINES; ++i) {
-		lines[i] = newLines[i];
+	strncpy(stopCode, code, sizeof(stopCode));
+	strncpy(stopName, name, sizeof(stopName));
+	window_stack_push(lines_window_get_window(), true);
+}
+
+// Shows the title + centered "Loading.." text while waiting for data, or hides
+// them to reveal the populated departures menu (whose own header takes over).
+static void lines_set_loading(bool loading)
+{
+	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
+	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
+}
+
+// Maps a Digitransit vehicle mode string to a single-letter type indicator.
+// Unknown modes produce an empty string so nothing is shown.
+static void mode_to_type_letter(const char *mode, char *out)
+{
+	if (strcmp(mode, "BUS") == 0) {
+		out[0] = 'B';
+		out[1] = '\0';
 	}
-	lineAmount = amount;
-	strncpy(stopName, name, 30);
+	else if (strcmp(mode, "TRAM") == 0) {
+		out[0] = 'T';
+		out[1] = '\0';
+	}
+	else {
+		out[0] = '\0';
+	}
+}
+
+static void process_line_tuple(Tuple *t)
+{
+	uint16_t key = t->key;
+
+	if (key == MESSAGE_KEY_lineCode) {
+		strncpy(lines[line_index].code, t->value->cstring, 10);
+		line_got_name = true;
+	}
+	else if (key == MESSAGE_KEY_lineTime) {
+		strncpy(lines[line_index].time, t->value->cstring, 10);
+		line_got_time = true;
+	}
+	else if (key == MESSAGE_KEY_lineDir) {
+		strncpy(lines[line_index].dir, t->value->cstring, 30);
+		line_got_dir = true;
+	}
+	else if (key == MESSAGE_KEY_lineMode) {
+		// Optional field, so it does not gate completion of a line.
+		mode_to_type_letter(t->value->cstring, lines[line_index].type);
+	}
+	else if (key == MESSAGE_KEY_lineRealtime) {
+		// Optional field, so it does not gate completion of a line.
+		lines[line_index].realtime = (t->value->int32 != 0);
+	}
+	else if (key == MESSAGE_KEY_lineMins) {
+		// Optional field, so it does not gate completion of a line.
+		lines[line_index].mins = t->value->int32;
+	}
+	else if (key == MESSAGE_KEY_lineMessage) {
+		return;
+	}
+	else {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "LinesWindow: AppMessage contained obscure key!");
+	}
+}
+
+void lines_message_inbox(DictionaryIterator *iter, void *context)
+{
+	Tuple *t = dict_find(iter, MESSAGE_KEY_lineMessage);
+	if (t) {
+		if (!line_transfer_started) {
+			APP_LOG(APP_LOG_LEVEL_INFO, "LinesWindow: Started lines message transfer.");
+			line_transfer_started = true;
+			line_got_name = false;
+			line_got_time = false;
+			line_got_dir = false;
+			line_index = 0;
+		}
+		// Clear the optional fields for the current line, so a line that omits an
+		// optional key does not keep a stale value from a previous transfer.
+		lines[line_index].type[0] = '\0';
+		lines[line_index].realtime = false;
+		lines[line_index].mins = -1;
+	}
+	else {
+		t = dict_find(iter, MESSAGE_KEY_messageEnd);
+		if (t) {
+			APP_LOG(APP_LOG_LEVEL_INFO, "LinesWindow: Line message transfer ended. Total of %d lines were transfered.", line_index);
+			line_transfer_started = false;
+			lineAmount = line_index;
+			menu_layer_reload_data(lineMenuLayer);
+			lines_set_loading(false);
+			vibes_short_pulse();
+			return;
+		}
+	}
+
+	t = dict_read_first(iter);
+	if (t) {
+		if (t->key == MESSAGE_KEY_lineNoFound) {
+			APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find departing lines!");
+			// Stay on the lines screen (empty menu) and replace the loading
+			// indicator with a "No departures" message instead of erroring out.
+			line_transfer_started = false;
+			text_layer_set_text(loadingLayer, "No departures");
+			return;
+		}
+		process_line_tuple(t);
+	}
+	while (t != NULL) {
+		t = dict_read_next(iter);
+		if (t) {
+			process_line_tuple(t);
+		}
+	}
+
+	if (line_got_name && line_got_time && line_got_dir) {
+		++line_index;
+		line_got_name = false;
+		line_got_time = false;
+		line_got_dir = false;
+	}
 }
 
 uint16_t lines_get_num_sections_callback(MenuLayer *menu_layer, void *data)
@@ -203,21 +328,75 @@ void setup_lines_layer(Window *window, Layer *window_layer)
 	layer_add_child(window_layer, menu_layer_get_layer(lineMenuLayer));
 }
 
+// Title (the stop name) + centered "Loading.." text, shown over the (empty) menu
+// until departures arrive. The MenuLayer does not draw its section header while
+// it has no rows, so the title is shown here explicitly during loading.
+void setup_lines_loading_layer(Layer *window_layer)
+{
+	GRect bounds = layer_get_bounds(window_layer);
+	int16_t top = STATUS_BAR_LAYER_HEIGHT;
+
+	GTextAlignment title_align = GTextAlignmentCenter;
+	titleLayer = text_layer_create(GRect(4, top, bounds.size.w - 8, 18));
+	text_layer_set_background_color(titleLayer, GColorClear);
+	text_layer_set_text_color(titleLayer, GColorBlack);
+	text_layer_set_font(titleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
+	text_layer_set_text_alignment(titleLayer, title_align);
+	text_layer_set_text(titleLayer, stopName);
+	layer_add_child(window_layer, text_layer_get_layer(titleLayer));
+
+	int16_t cy = top + (bounds.size.h - top) / 2 - 12;
+	loadingLayer = text_layer_create(GRect(0, cy, bounds.size.w, 24));
+	text_layer_set_background_color(loadingLayer, GColorClear);
+	text_layer_set_text_color(loadingLayer, GColorBlack);
+	text_layer_set_font(loadingLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+	text_layer_set_text_alignment(loadingLayer, GTextAlignmentCenter);
+	text_layer_set_text(loadingLayer, "Loading..");
+	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
+}
+
 void lines_window_load(Window *window)
 {
 	Layer *window_layer = window_get_root_layer(window);
+	// Clear any departures left over from a previous visit so the (reused) menu
+	// does not render stale rows (and its header) behind the loading overlay.
+	lineAmount = 0;
 	setup_lines_layer(window, window_layer);
+	setup_lines_loading_layer(window_layer);
 
 	statusLayer = status_bar_layer_create();
   status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
   status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
+
+	lines_set_loading(true);
+
+	// Request departing lines for the selected stop from the JS component. This
+	// replaces the stops window's inbox handler while departures are on top.
+	app_message_register_inbox_received(lines_message_inbox);
+	line_transfer_started = false;
+
+	DictionaryIterator *iter;
+	app_message_outbox_begin(&iter);
+	if (iter == NULL) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "DictionaryIterator NULL!");
+		return;
+	}
+	dict_write_cstring(iter, MESSAGE_KEY_lineMessage, (char *)stopCode);
+	dict_write_end(iter);
+	app_message_outbox_send();
 }
 
 void lines_window_unload(Window *window)
 {
 	menu_layer_destroy(lineMenuLayer);
 	status_bar_layer_destroy(statusLayer);
+	text_layer_destroy(loadingLayer);
+	text_layer_destroy(titleLayer);
+
+	// Hand the AppMessage inbox back to the stops window so it keeps working if
+	// the user selects another stop.
+	main_window_register_inbox();
 }
 
 void lines_window_create()
