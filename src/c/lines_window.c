@@ -182,11 +182,14 @@ int16_t lines_get_header_height_callback(MenuLayer *menu_layer, uint16_t section
 
 void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t section_index, void *data)
 {
-	switch (section_index) {
-		case 0:
-			menu_cell_basic_header_draw(ctx, cell_layer, (char *)stopName);
-			break;
+	if (section_index != 0) {
+		return;
 	}
+	// Centered header, matching the centered title shown during loading so the
+	// title does not shift when the list appears.
+	GRect bounds = layer_get_bounds(cell_layer);
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, (char *)stopName, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
 // Picks the badge background color for a line type. On color watches buses are
