@@ -2,6 +2,7 @@
 #include "lines_window.h"
 #include "main_window.h"
 #include "error_window.h"
+#include "favorites.h"
 
 static Window *linesWindow;
 static MenuLayer *lineMenuLayer;
@@ -307,6 +308,14 @@ void lines_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *d
 	return;
 }
 
+// Long-pressing a departure favorites/unfavorites the stop it belongs to. The
+// stop's vehicle mode is not known here, so the type is left blank; the favorites
+// list fills it in from live data.
+void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
+{
+	favorites_show_action_menu(stopCode, stopName, "", "Favorite stop", "Unfavorite stop");
+}
+
 void setup_lines_layer(Window *window, Layer *window_layer)
 {
 	GRect window_bounds = layer_get_bounds(window_layer);
@@ -323,6 +332,7 @@ void setup_lines_layer(Window *window, Layer *window_layer)
 		.get_cell_height = lines_get_cell_height_callback,
 		.draw_row = lines_draw_row_callback,
 		.select_click = lines_select_callback,
+		.select_long_click = lines_long_select_callback,
 	});
 
 	menu_layer_set_highlight_colors(lineMenuLayer, COLOR_FALLBACK(LINES_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -397,9 +407,8 @@ void lines_window_unload(Window *window)
 	text_layer_destroy(loadingLayer);
 	text_layer_destroy(titleLayer);
 
-	// Hand the AppMessage inbox back to the stops window so it keeps working if
-	// the user selects another stop.
-	main_window_register_inbox();
+	// The window underneath (stops or favorites) reclaims the AppMessage inbox in
+	// its own appear handler, so nothing needs to be restored here.
 }
 
 void lines_window_create()

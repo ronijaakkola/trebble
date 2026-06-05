@@ -2,6 +2,7 @@
 #include "main_window.h"
 #include "lines_window.h"
 #include "error_window.h"
+#include "favorites.h"
 
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
@@ -195,6 +196,13 @@ void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *da
 	lines_window_show(stops[cell_index->row].code, stops[cell_index->row].name);
 }
 
+// Long-pressing a stop opens an action menu to favorite/unfavorite it.
+void menu_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
+{
+	struct StopInfo *stop = &stops[cell_index->row];
+	favorites_show_action_menu(stop->code, stop->name, stop->type, "Favorite stop", "Unfavorite stop");
+}
+
 void setup_menu_layer(Window *window, Layer *window_layer)
 {
 	GRect window_bounds = layer_get_bounds(window_layer);
@@ -212,6 +220,7 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 		.get_cell_height = menu_get_cell_height_callback,
 		.draw_row = menu_draw_row_callback,
 		.select_click = menu_select_callback,
+		.select_long_click = menu_long_select_callback,
 	});
 
 	menu_layer_set_highlight_colors(mainMenuLayer, COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -279,6 +288,13 @@ void main_window_load(Window *window)
 	app_message_outbox_send();
 }
 
+// Re-claims the AppMessage inbox whenever the stops window is revealed, including
+// after the departures window (pushed on top) is dismissed.
+void main_window_appear(Window *window)
+{
+	main_window_register_inbox();
+}
+
 void main_window_unload(Window *window)
 {
 	menu_layer_destroy(mainMenuLayer);
@@ -292,6 +308,7 @@ void main_window_create()
 	mainWindow = window_create();
 	window_set_window_handlers(mainWindow, (WindowHandlers) {
 		.load = main_window_load,
+		.appear = main_window_appear,
 		.unload = main_window_unload
 	});
 }
