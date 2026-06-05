@@ -23,6 +23,9 @@ function createDeparturesQuery(stopCode) {
     name
     stoptimesWithoutPatterns(omitNonPickups: true, numberOfDepartures: 10) {
       scheduledDeparture
+      realtimeDeparture
+      realtime
+      serviceDay
       headsign
       trip {
         route {

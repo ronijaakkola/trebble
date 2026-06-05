@@ -147,12 +147,20 @@ function getDepartingLines(stopCode) {
           var lines = stoptimes
             .slice(0, lineLimit)
             .map((line) => {
+              // Use the realtime prediction when it is actually available;
+              // otherwise realtimeDeparture just echoes the scheduled value.
+              var isRealtime = line.realtime === true;
+              var departureSecs = isRealtime
+                ? line.realtimeDeparture
+                : line.scheduledDeparture;
               return {
                 lineMessage: 1,
                 lineCode: line.trip.route.shortName,
-                lineTime: convertSecondsToTime(line.scheduledDeparture),
+                lineTime: convertSecondsToTime(departureSecs),
                 lineDir: line.headsign,
                 lineMode: line.trip.route.mode,
+                lineRealtime: isRealtime ? 1 : 0,
+                lineMins: minutesUntilDeparture(line.serviceDay, departureSecs),
             };
           });
 
@@ -186,6 +194,15 @@ function convertSecondsToTime(seconds) {
   const paddedMinutes = minutes.toString().padStart(2, "0");
 
   return `${paddedHours}:${paddedMinutes}`;
+}
+
+// Whole minutes from now until a departure. serviceDay is the epoch-seconds of
+// the service date's midnight, departureSecs is seconds past that midnight, so
+// their sum is the absolute departure time (robust across midnight).
+function minutesUntilDeparture(serviceDay, departureSecs) {
+  var nowSecs = Date.now() / 1000;
+  var departureEpoch = serviceDay + departureSecs;
+  return Math.floor((departureEpoch - nowSecs) / 60);
 }
 
 Pebble.addEventListener("appmessage", function (e) {

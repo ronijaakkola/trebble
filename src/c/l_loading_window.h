@@ -8,6 +8,8 @@ struct LineInfo {
 	char code[10];
 	char dir[30];
 	char type[2];
+	bool realtime; // true when the departure time is a live prediction
+	int mins;      // minutes until departure; <0 means "do not show"
 };
 
 void l_loading_window_show();
