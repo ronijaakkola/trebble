@@ -97,16 +97,23 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		return;
 	}
 
+	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
+		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
+		error_window_set_error("No internet connection", ERROR_ICON_NO_INTERNET);
+		error_window_show();
+		return;
+	}
+
 	if (dict_find(iter, MESSAGE_KEY_stopNoFound)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS component was not able to find stops!");
-		error_window_set_error("Was not able to find nearby stops.");
+		error_window_set_error("Was not able to find nearby stops.", ERROR_ICON_GENERIC);
 		error_window_show();
 		return;
 	}
 
 	if (dict_find(iter, MESSAGE_KEY_noGps)) {
 		APP_LOG(APP_LOG_LEVEL_ERROR, "JS reported that location was not found!");
-		error_window_set_error("Was not able to determine your location.");
+		error_window_set_error("Was not able to determine your location.", ERROR_ICON_GENERIC);
 		error_window_show();
 		return;
 	}

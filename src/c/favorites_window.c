@@ -94,6 +94,14 @@ void favorites_message_inbox(DictionaryIterator *iter, void *context)
 		return;
 	}
 
+	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
+		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
+		fav_transfer_started = false;
+		error_window_set_error("No internet connection", ERROR_ICON_NO_INTERNET);
+		error_window_show();
+		return;
+	}
+
 	if (dict_find(iter, MESSAGE_KEY_favNoFound)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS could not load favorite stops!");
 		fav_transfer_started = false;

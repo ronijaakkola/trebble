@@ -91,6 +91,14 @@ static void process_line_tuple(Tuple *t)
 
 void lines_message_inbox(DictionaryIterator *iter, void *context)
 {
+	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
+		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
+		line_transfer_started = false;
+		error_window_set_error("No internet connection", ERROR_ICON_NO_INTERNET);
+		error_window_show();
+		return;
+	}
+
 	Tuple *t = dict_find(iter, MESSAGE_KEY_lineMessage);
 	if (t) {
 		if (!line_transfer_started) {
