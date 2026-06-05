@@ -38,7 +38,29 @@ function createDeparturesQuery(stopCode) {
 }`;
 }
 
+// Looks up a set of stops by their gtfsId so their coordinates (and current
+// name/mode) can be resolved for the favorites list. Digitransit returns the
+// stops in the order of the requested ids, with null for any id it cannot find.
+function createFavoritesQuery(codes) {
+  var idList = codes
+    .map(function (code) {
+      return '"' + code + '"';
+    })
+    .join(", ");
+  return `
+{
+  stops(ids: [${idList}]) {
+    gtfsId
+    name
+    lat
+    lon
+    vehicleMode
+  }
+}`;
+}
+
 module.exports = {
   createStopsQuery,
-  createDeparturesQuery
-}; 
+  createDeparturesQuery,
+  createFavoritesQuery
+};

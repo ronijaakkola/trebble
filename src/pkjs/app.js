@@ -181,6 +181,121 @@ function getDepartingLines(stopCode) {
   req.send(query);
 }
 
+// Great-circle distance in whole meters between two lat/lon points.
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  var R = 6371000;
+  var toRad = function (deg) {
+    return (deg * Math.PI) / 180;
+  };
+  var dLat = toRad(lat2 - lat1);
+  var dLon = toRad(lon2 - lon1);
+  var a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+// Resolves the favorited stops to name/mode/coordinates, computes the distance
+// from the user's position (when known), and sends them to the watch ordered
+// nearest-first. When position is null the list is sent in its original order
+// with no distance.
+function getFavoriteStops(codes, lat, lon) {
+  var query = queries.createFavoritesQuery(codes);
+  var req = createGraphQLRequest(url);
+
+  req.onload = function (e) {
+    if (req.readyState !== 4) {
+      return;
+    }
+    if (req.status !== 200 || req.responseText === "") {
+      console.log("JS: Error loading favorite stops. Status: " + req.status);
+      Pebble.sendAppMessage({ favNoFound: 1 });
+      return;
+    }
+
+    var response = JSON.parse(req.responseText);
+    if (!response || !response.data || !response.data.stops) {
+      console.log("JS: No valid favorites data in the GraphQL response.");
+      Pebble.sendAppMessage({ favNoFound: 1 });
+      return;
+    }
+
+    var hasLocation = lat !== null && lon !== null;
+    var stops = response.data.stops
+      .filter(function (stop) {
+        // Unknown ids come back as null; drop them.
+        return stop != null;
+      })
+      .map(function (stop) {
+        return {
+          code: stop.gtfsId,
+          name: stop.name,
+          mode: stop.vehicleMode,
+          dist: hasLocation
+            ? distanceMeters(lat, lon, stop.lat, stop.lon)
+            : -1,
+        };
+      });
+
+    if (hasLocation) {
+      stops.sort(function (a, b) {
+        return a.dist - b.dist;
+      });
+    }
+
+    if (stops.length === 0) {
+      Pebble.sendAppMessage({ favNoFound: 1 });
+      return;
+    }
+
+    var items = stops.map(function (stop) {
+      return {
+        favMessage: 1,
+        favCode: stop.code,
+        favName: stop.name,
+        favDist: stop.dist,
+        favMode: stop.mode,
+      };
+    });
+    sendList(items);
+  };
+
+  req.send(query);
+}
+
+// Entry point for a favMessage request: parses the comma-separated codes, gets
+// the user's location, and fetches the favorite stops.
+function handleFavorites(csv) {
+  var codes = csv.split(",").filter(function (code) {
+    return code.length > 0;
+  });
+  if (codes.length === 0) {
+    Pebble.sendAppMessage({ messageEnd: 1 });
+    return;
+  }
+
+  if (debugLocation && isEmulator()) {
+    console.log("JS: Emulator detected, using debug location for favorites.");
+    getFavoriteStops(codes, debugLocation[0], debugLocation[1]);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      getFavoriteStops(codes, pos.coords.latitude, pos.coords.longitude);
+    },
+    function (err) {
+      console.warn("JS: GPS error (" + err.code + "): " + err.message);
+      // Still show favorites, just unsorted and without distances.
+      getFavoriteStops(codes, null, null);
+    },
+    geolocationOptions
+  );
+}
+
 Pebble.addEventListener("ready", function (e) {
   console.log("JS: Javascript component ready");
 });
@@ -228,6 +343,9 @@ Pebble.addEventListener("appmessage", function (e) {
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
     );
     getDepartingLines(e.payload.lineMessage);
+  } else if (typeof e.payload.favMessage !== "undefined") {
+    console.log("JS: Received favMessage with codes: " + e.payload.favMessage);
+    handleFavorites(e.payload.favMessage);
   } else {
     console.log("JS: Received unknown message from Pebble!");
   }
