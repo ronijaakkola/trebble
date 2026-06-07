@@ -153,7 +153,7 @@ void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t 
 	// title does not shift when the list appears.
 	GRect bounds = layer_get_bounds(cell_layer);
 	graphics_context_set_text_color(ctx, GColorBlack);
-	graphics_draw_text(ctx, "Nearest stops", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+	graphics_draw_text(ctx, "Nearby stops", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
 int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -250,7 +250,7 @@ void setup_loading_layer(Layer *window_layer)
 	text_layer_set_text_color(titleLayer, GColorBlack);
 	text_layer_set_font(titleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
 	text_layer_set_text_alignment(titleLayer, title_align);
-	text_layer_set_text(titleLayer, "Nearest stops");
+	text_layer_set_text(titleLayer, "Nearby stops");
 	layer_add_child(window_layer, text_layer_get_layer(titleLayer));
 
 	int16_t cy = top + (bounds.size.h - top) / 2 - 12;

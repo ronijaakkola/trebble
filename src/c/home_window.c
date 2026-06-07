@@ -8,6 +8,11 @@ static Window *homeWindow;
 static MenuLayer *homeMenuLayer;
 static StatusBarLayer *statusLayer;
 
+// PDC row icons, one per home item. Loaded on window load and reused for every
+// redraw, mirroring how the error window holds its PDC icon.
+static GDrawCommandImage *nearbyIcon;
+static GDrawCommandImage *pinnedIcon;
+
 // Home menu items. Subtitle is optional; an empty subtitle renders a single
 // vertically centered title (like "Nearby stops"). Icons will be added later.
 struct HomeItem {
@@ -77,15 +82,33 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 		subtitle = pin_subtitle;
 	}
 
-	#ifdef PBL_COLOR
+	#if defined(PBL_COLOR)
 		GColor title_color = GColorBlack;
 		GColor subtitle_color = GColorDarkGray;
-	#else
+	#elif defined(PBL_PLATFORM_APLITE)
+		// Aplite is true 1-bit with no dithering, so invert the text on the
+		// solid-black selected row.
 		GColor title_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 		GColor subtitle_color = title_color;
+	#else
+		// Diorite renders a dithered light-gray selection, so black text (and the
+		// black row icons) stay legible whether or not the row is selected.
+		GColor title_color = GColorBlack;
+		GColor subtitle_color = GColorBlack;
 	#endif
 
-	int16_t text_x = 8;
+	// Row icon on the left, vertically centered like Pebble's own menu icons. The
+	// title starts to the right of it.
+	int16_t icon_left = 8;
+	int16_t text_x = icon_left + 25 + 10; // fallback width if the PDC is missing
+	GDrawCommandImage *icon = (cell_index->row == HOME_ROW_NEARBY) ? nearbyIcon : pinnedIcon;
+	if (icon) {
+		GSize icon_size = gdraw_command_image_get_bounds_size(icon);
+		GPoint icon_origin = GPoint(icon_left, (bounds.size.h - icon_size.h) / 2);
+		gdraw_command_image_draw(ctx, icon, icon_origin);
+		text_x = icon_left + icon_size.w + 10;
+	}
+
 	int16_t text_w = bounds.size.w - text_x - 4;
 	int16_t cy = bounds.size.h / 2;
 
@@ -135,7 +158,14 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 		.select_click = home_menu_select_callback,
 	});
 
-	menu_layer_set_highlight_colors(homeMenuLayer, COLOR_FALLBACK(HOME_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
+	// Aplite has no gray, so it keeps the classic inverted (black) selection;
+	// every other platform (incl. diorite, which dithers) uses the light-gray
+	// selection so the black row icons remain visible when a row is highlighted.
+	#ifdef PBL_PLATFORM_APLITE
+		menu_layer_set_highlight_colors(homeMenuLayer, GColorBlack, GColorWhite);
+	#else
+		menu_layer_set_highlight_colors(homeMenuLayer, HOME_HL_COLOR, GColorBlack);
+	#endif
 	menu_layer_set_click_config_onto_window(homeMenuLayer, window);
 
 	layer_add_child(window_layer, menu_layer_get_layer(homeMenuLayer));
@@ -144,6 +174,9 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 void home_window_load(Window *window)
 {
 	Layer *window_layer = window_get_root_layer(window);
+
+	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_LOCATION);
+	pinnedIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TIMELINE_PIN);
 
 	home_setup_menu_layer(window, window_layer);
 
@@ -166,6 +199,14 @@ void home_window_unload(Window *window)
 {
 	menu_layer_destroy(homeMenuLayer);
 	status_bar_layer_destroy(statusLayer);
+	if (nearbyIcon) {
+		gdraw_command_image_destroy(nearbyIcon);
+		nearbyIcon = NULL;
+	}
+	if (pinnedIcon) {
+		gdraw_command_image_destroy(pinnedIcon);
+		pinnedIcon = NULL;
+	}
 }
 
 void home_window_create()
