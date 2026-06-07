@@ -32,6 +32,10 @@ void lines_window_show(char *code, char *name)
 // them to reveal the populated departures menu (whose own header takes over).
 static void lines_set_loading(bool loading)
 {
+	// The overlay layers only exist while the window is built (see lines_build_ui).
+	if (!loadingLayer || !titleLayer) {
+		return;
+	}
 	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
 }
@@ -121,7 +125,11 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 			APP_LOG(APP_LOG_LEVEL_INFO, "LinesWindow: Line message transfer ended. Total of %d lines were transfered.", line_index);
 			line_transfer_started = false;
 			lineAmount = line_index;
-			menu_layer_reload_data(lineMenuLayer);
+			// The list may have been freed if the window was covered before the data
+			// arrived; the count is retained so it renders when the window reappears.
+			if (lineMenuLayer) {
+				menu_layer_reload_data(lineMenuLayer);
+			}
 			lines_set_loading(false);
 			vibes_short_pulse();
 			return;
@@ -135,7 +143,9 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 			// Stay on the lines screen (empty menu) and replace the loading
 			// indicator with a "No departures" message instead of erroring out.
 			line_transfer_started = false;
-			text_layer_set_text(loadingLayer, "No departures");
+			if (loadingLayer) {
+				text_layer_set_text(loadingLayer, "No departures");
+			}
 			return;
 		}
 		process_line_tuple(t);
@@ -376,20 +386,54 @@ void setup_lines_loading_layer(Layer *window_layer)
 	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
 }
 
-void lines_window_load(Window *window)
+// Builds the window's layers (menu + loading overlay + status bar). Split out so
+// it can run both on initial load and when the window is revealed again after
+// being covered (see lines_window_appear/disappear). No-op if already built.
+static void lines_build_ui(Window *window)
 {
+	if (lineMenuLayer) {
+		return;
+	}
 	Layer *window_layer = window_get_root_layer(window);
-	// Clear any departures left over from a previous visit so the (reused) menu
-	// does not render stale rows (and its header) behind the loading overlay.
-	lineAmount = 0;
+
 	setup_lines_layer(window, window_layer);
 	setup_lines_loading_layer(window_layer);
 
 	statusLayer = status_bar_layer_create();
-  status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
-  status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
+	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
+	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
+}
 
+// Frees the window's layers. The departures themselves live in `lines`, so the
+// menu is rebuilt from them on the next reveal. Freeing the layers while another
+// window is on top keeps aplite's small heap available for that window.
+static void lines_destroy_ui(void)
+{
+	if (lineMenuLayer) {
+		menu_layer_destroy(lineMenuLayer);
+		lineMenuLayer = NULL;
+	}
+	if (statusLayer) {
+		status_bar_layer_destroy(statusLayer);
+		statusLayer = NULL;
+	}
+	if (loadingLayer) {
+		text_layer_destroy(loadingLayer);
+		loadingLayer = NULL;
+	}
+	if (titleLayer) {
+		text_layer_destroy(titleLayer);
+		titleLayer = NULL;
+	}
+}
+
+void lines_window_load(Window *window)
+{
+	// Clear any departures left over from a previous visit so the (reused) menu
+	// does not render stale rows (and its header) behind the loading overlay.
+	lineAmount = 0;
+	lines_build_ui(window);
 	lines_set_loading(true);
 
 	// Request departing lines for the selected stop from the JS component. This
@@ -408,12 +452,29 @@ void lines_window_load(Window *window)
 	app_message_outbox_send();
 }
 
+// Rebuild the layers if they were freed while this window was covered (e.g. by the
+// error, action-menu or feedback window), re-rendering the retained departures.
+void lines_window_appear(Window *window)
+{
+	if (!lineMenuLayer) {
+		lines_build_ui(window);
+		menu_layer_reload_data(lineMenuLayer);
+		lines_set_loading(lineAmount == 0);
+	}
+
+	app_message_register_inbox_received(lines_message_inbox);
+}
+
+// Free the layers whenever another window covers this one, returning their memory
+// to the heap for the window on top.
+void lines_window_disappear(Window *window)
+{
+	lines_destroy_ui();
+}
+
 void lines_window_unload(Window *window)
 {
-	menu_layer_destroy(lineMenuLayer);
-	status_bar_layer_destroy(statusLayer);
-	text_layer_destroy(loadingLayer);
-	text_layer_destroy(titleLayer);
+	lines_destroy_ui();
 
 	// The window underneath (stops or pinned stops) reclaims the AppMessage inbox in
 	// its own appear handler, so nothing needs to be restored here.
@@ -424,6 +485,8 @@ void lines_window_create()
 	linesWindow = window_create();
 	window_set_window_handlers(linesWindow, (WindowHandlers) {
 		.load = lines_window_load,
+		.appear = lines_window_appear,
+		.disappear = lines_window_disappear,
 		.unload = lines_window_unload
 	});
 }

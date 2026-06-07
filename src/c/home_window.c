@@ -171,14 +171,20 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 	layer_add_child(window_layer, menu_layer_get_layer(homeMenuLayer));
 }
 
-void home_window_load(Window *window)
+// Builds the home menu, its row icons and the status bar. Split out so it can run
+// both on initial load and when the window is revealed again after being covered
+// (see home_window_appear/disappear). No-op if already built.
+static void home_build_ui(Window *window)
 {
+	if (homeMenuLayer) {
+		return;
+	}
 	Layer *window_layer = window_get_root_layer(window);
+
+	home_setup_menu_layer(window, window_layer);
 
 	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_LOCATION);
 	pinnedIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TIMELINE_PIN);
-
-	home_setup_menu_layer(window, window_layer);
 
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
@@ -186,19 +192,19 @@ void home_window_load(Window *window)
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
 }
 
-// Redraw on reveal so the Pinned stops count is up to date after the user pins
-// or unpins stops elsewhere.
-void home_window_appear(Window *window)
+// Frees the home menu, its icons and status bar. The home menu has no dynamic
+// state to preserve (it is rebuilt identically), and freeing it whenever another
+// window is on top keeps aplite's small heap available for that window.
+static void home_destroy_ui(void)
 {
 	if (homeMenuLayer) {
-		menu_layer_reload_data(homeMenuLayer);
+		menu_layer_destroy(homeMenuLayer);
+		homeMenuLayer = NULL;
 	}
-}
-
-void home_window_unload(Window *window)
-{
-	menu_layer_destroy(homeMenuLayer);
-	status_bar_layer_destroy(statusLayer);
+	if (statusLayer) {
+		status_bar_layer_destroy(statusLayer);
+		statusLayer = NULL;
+	}
 	if (nearbyIcon) {
 		gdraw_command_image_destroy(nearbyIcon);
 		nearbyIcon = NULL;
@@ -209,12 +215,40 @@ void home_window_unload(Window *window)
 	}
 }
 
+void home_window_load(Window *window)
+{
+	home_build_ui(window);
+}
+
+// Rebuild the UI if it was freed while another window was on top, and redraw so
+// the Pinned stops count is up to date after pinning/unpinning elsewhere.
+void home_window_appear(Window *window)
+{
+	home_build_ui(window);
+	if (homeMenuLayer) {
+		menu_layer_reload_data(homeMenuLayer);
+	}
+}
+
+// Free the UI whenever another window covers the home menu, returning its memory
+// to the heap for the window on top.
+void home_window_disappear(Window *window)
+{
+	home_destroy_ui();
+}
+
+void home_window_unload(Window *window)
+{
+	home_destroy_ui();
+}
+
 void home_window_create()
 {
 	homeWindow = window_create();
 	window_set_window_handlers(homeWindow, (WindowHandlers) {
 		.load = home_window_load,
 		.appear = home_window_appear,
+		.disappear = home_window_disappear,
 		.unload = home_window_unload
 	});
 }

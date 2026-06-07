@@ -20,6 +20,10 @@ static int pin_index;
 // them to reveal the populated pinned stops menu (whose own header takes over).
 static void pins_set_loading(bool loading)
 {
+	// The overlay layers only exist while the window is built (see pins_build_ui).
+	if (!loadingLayer || !titleLayer) {
+		return;
+	}
 	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
 }
@@ -88,7 +92,11 @@ void pins_message_inbox(DictionaryIterator *iter, void *context)
 	if (dict_find(iter, MESSAGE_KEY_messageEnd)) {
 		pin_transfer_started = false;
 		pinAmount = pin_index;
-		menu_layer_reload_data(pinsMenuLayer);
+		// The list may have been freed if the window was covered before the data
+		// arrived; the count is retained so it renders when the window reappears.
+		if (pinsMenuLayer) {
+			menu_layer_reload_data(pinsMenuLayer);
+		}
 		pins_set_loading(false);
 		vibes_short_pulse();
 		return;
@@ -105,14 +113,18 @@ void pins_message_inbox(DictionaryIterator *iter, void *context)
 	if (dict_find(iter, MESSAGE_KEY_pinNoFound)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS could not load pinned stops!");
 		pin_transfer_started = false;
-		text_layer_set_text(loadingLayer, "Couldn't load");
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "Couldn't load");
+		}
 		return;
 	}
 
 	if (dict_find(iter, MESSAGE_KEY_noGps)) {
 		APP_LOG(APP_LOG_LEVEL_ERROR, "JS reported that location was not found!");
 		pin_transfer_started = false;
-		text_layer_set_text(loadingLayer, "No location");
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "No location");
+		}
 		return;
 	}
 }
@@ -253,11 +265,16 @@ void setup_pins_loading_layer(Layer *window_layer)
 	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
 }
 
-void pins_window_load(Window *window)
+// Builds the window's layers (menu + loading overlay + status bar). Split out so
+// it can run both on initial load and when the window is revealed again after
+// being covered (see pins_window_appear/disappear). No-op if already built.
+static void pins_build_ui(Window *window)
 {
+	if (pinsMenuLayer) {
+		return;
+	}
 	Layer *window_layer = window_get_root_layer(window);
 
-	pinAmount = 0;
 	setup_pins_menu_layer(window, window_layer);
 	setup_pins_loading_layer(window_layer);
 
@@ -265,6 +282,35 @@ void pins_window_load(Window *window)
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
+}
+
+// Frees the window's layers. The pinned stops live in `pinStops`, so the menu is
+// rebuilt from them on the next reveal. Freeing the layers while another window is
+// on top keeps aplite's small heap available for that window.
+static void pins_destroy_ui(void)
+{
+	if (pinsMenuLayer) {
+		menu_layer_destroy(pinsMenuLayer);
+		pinsMenuLayer = NULL;
+	}
+	if (statusLayer) {
+		status_bar_layer_destroy(statusLayer);
+		statusLayer = NULL;
+	}
+	if (loadingLayer) {
+		text_layer_destroy(loadingLayer);
+		loadingLayer = NULL;
+	}
+	if (titleLayer) {
+		text_layer_destroy(titleLayer);
+		titleLayer = NULL;
+	}
+}
+
+void pins_window_load(Window *window)
+{
+	pinAmount = 0;
+	pins_build_ui(window);
 
 	pins_set_loading(true);
 
@@ -312,20 +358,35 @@ static void pins_prune_removed(void)
 		}
 	}
 	pinAmount = write;
-	menu_layer_reload_data(pinsMenuLayer);
+	if (pinsMenuLayer) {
+		menu_layer_reload_data(pinsMenuLayer);
+	}
 
 	// Fall back to the empty state once the last pin is gone.
 	if (pinAmount == 0) {
-		text_layer_set_text(loadingLayer, "No pinned stops");
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "No pinned stops");
+		}
 		pins_set_loading(true);
 	}
 }
 
 // Re-registers the pinned stops inbox handler whenever the window is revealed,
 // including after the departures or feedback window (pushed on top) is dismissed.
-// If a stop was unpinned while covered, the list is refreshed to match.
+// If the layers were freed while covered, rebuild them and re-render the retained
+// list; if a stop was unpinned while covered, the list is refreshed to match.
 void pins_window_appear(Window *window)
 {
+	if (!pinsMenuLayer) {
+		pins_build_ui(window);
+		menu_layer_reload_data(pinsMenuLayer);
+		pins_set_loading(pinAmount == 0);
+		// No rows to show (e.g. everything was unpinned): show the empty state.
+		if (pinAmount == 0 && loadingLayer) {
+			text_layer_set_text(loadingLayer, "No pinned stops");
+		}
+	}
+
 	pins_window_register_inbox();
 
 	if (pins_consume_changed()) {
@@ -333,12 +394,16 @@ void pins_window_appear(Window *window)
 	}
 }
 
+// Free the layers whenever another window covers this one, returning their memory
+// to the heap for the window on top.
+void pins_window_disappear(Window *window)
+{
+	pins_destroy_ui();
+}
+
 void pins_window_unload(Window *window)
 {
-	menu_layer_destroy(pinsMenuLayer);
-	status_bar_layer_destroy(statusLayer);
-	text_layer_destroy(loadingLayer);
-	text_layer_destroy(titleLayer);
+	pins_destroy_ui();
 }
 
 void pins_window_create(void)
@@ -347,6 +412,7 @@ void pins_window_create(void)
 	window_set_window_handlers(pinsWindow, (WindowHandlers) {
 		.load = pins_window_load,
 		.appear = pins_window_appear,
+		.disappear = pins_window_disappear,
 		.unload = pins_window_unload
 	});
 }

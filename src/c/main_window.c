@@ -19,6 +19,10 @@ static int stop_index;
 // them to reveal the populated stops menu (whose own section header takes over).
 static void main_set_loading(bool loading)
 {
+	// The overlay layers only exist while the window is built (see main_build_ui).
+	if (!loadingLayer || !titleLayer) {
+		return;
+	}
 	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
 }
@@ -93,7 +97,11 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		APP_LOG(APP_LOG_LEVEL_INFO, "MainWindow: Stop message transfer ended. Total of %d stops were transfered.", stop_index);
 		stop_transfer_started = false;
 		stopAmount = stop_index;
-		menu_layer_reload_data(mainMenuLayer);
+		// The list may have been freed if the window was covered before the data
+		// arrived; the count is retained so it renders when the window reappears.
+		if (mainMenuLayer) {
+			menu_layer_reload_data(mainMenuLayer);
+		}
 		main_set_loading(false);
 		vibes_short_pulse();
 		return;
@@ -265,21 +273,54 @@ void setup_loading_layer(Layer *window_layer)
 	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
 }
 
-void main_window_load(Window *window)
+// Builds the window's layers (menu + loading overlay + status bar). Split out so
+// it can run both on initial load and when the window is revealed again after
+// being covered (see main_window_appear/disappear). No-op if already built.
+static void main_build_ui(Window *window)
 {
+	if (mainMenuLayer) {
+		return;
+	}
 	Layer *window_layer = window_get_root_layer(window);
 
-	// Clear any stops left over from a previous load so the menu does not render
-	// stale rows (and its header) behind the loading overlay.
-	stopAmount = 0;
 	setup_menu_layer(window, window_layer);
 	setup_loading_layer(window_layer);
 
 	statusLayer = status_bar_layer_create();
-  status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
-  status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
+	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
+	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
+}
 
+// Frees the window's layers. The stop list itself lives in `stops`, so the menu
+// is rebuilt from it on the next reveal. Freeing the layers while another window
+// is on top keeps aplite's small heap available for that window.
+static void main_destroy_ui(void)
+{
+	if (mainMenuLayer) {
+		menu_layer_destroy(mainMenuLayer);
+		mainMenuLayer = NULL;
+	}
+	if (statusLayer) {
+		status_bar_layer_destroy(statusLayer);
+		statusLayer = NULL;
+	}
+	if (loadingLayer) {
+		text_layer_destroy(loadingLayer);
+		loadingLayer = NULL;
+	}
+	if (titleLayer) {
+		text_layer_destroy(titleLayer);
+		titleLayer = NULL;
+	}
+}
+
+void main_window_load(Window *window)
+{
+	// Clear any stops left over from a previous load so the menu does not render
+	// stale rows (and its header) behind the loading overlay.
+	stopAmount = 0;
+	main_build_ui(window);
 	main_set_loading(true);
 
 	// Request nearby stops from the JS component.
@@ -298,18 +339,29 @@ void main_window_load(Window *window)
 }
 
 // Re-claims the AppMessage inbox whenever the stops window is revealed, including
-// after the departures window (pushed on top) is dismissed.
+// after the departures window (pushed on top) is dismissed. If the layers were
+// freed while covered, rebuild them and re-render the retained stop list.
 void main_window_appear(Window *window)
 {
+	if (!mainMenuLayer) {
+		main_build_ui(window);
+		menu_layer_reload_data(mainMenuLayer);
+		main_set_loading(stopAmount == 0);
+	}
+
 	main_window_register_inbox();
+}
+
+// Free the layers whenever another window covers this one, returning their memory
+// to the heap for the window on top.
+void main_window_disappear(Window *window)
+{
+	main_destroy_ui();
 }
 
 void main_window_unload(Window *window)
 {
-	menu_layer_destroy(mainMenuLayer);
-	status_bar_layer_destroy(statusLayer);
-	text_layer_destroy(loadingLayer);
-	text_layer_destroy(titleLayer);
+	main_destroy_ui();
 }
 
 void main_window_create()
@@ -318,6 +370,7 @@ void main_window_create()
 	window_set_window_handlers(mainWindow, (WindowHandlers) {
 		.load = main_window_load,
 		.appear = main_window_appear,
+		.disappear = main_window_disappear,
 		.unload = main_window_unload
 	});
 }
