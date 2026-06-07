@@ -98,7 +98,6 @@ void pins_message_inbox(DictionaryIterator *iter, void *context)
 			menu_layer_reload_data(pinsMenuLayer);
 		}
 		pins_set_loading(false);
-		vibes_short_pulse();
 		return;
 	}
 
