@@ -58,7 +58,11 @@ void feedback_window_load(Window *window)
 		message, font, GRect(0, 0, avail_w, bounds.size.h),
 		GTextOverflowModeWordWrap, GTextAlignmentCenter);
 
-	GRect text_frame = GRect(margin, (bounds.size.h - content.h) / 2, avail_w, content.h);
+	// graphics_text_layout_get_content_size underestimates the line height, so a
+	// frame sized to exactly content.h clips the bottom of descenders (p, g, y).
+	// Pad the height and keep the text vertically centered on the padded frame.
+	int16_t frame_h = content.h + 8;
+	GRect text_frame = GRect(margin, (bounds.size.h - frame_h) / 2, avail_w, frame_h);
 
 	messageLayer = text_layer_create(text_frame);
 	text_layer_set_background_color(messageLayer, GColorClear);

@@ -23,12 +23,12 @@
             "lineMode",
             "lineRealtime",
             "lineMins",
-            "favMessage",
-            "favCode",
-            "favName",
-            "favDist",
-            "favMode",
-            "favNoFound",
+            "pinMessage",
+            "pinCode",
+            "pinName",
+            "pinDist",
+            "pinMode",
+            "pinNoFound",
             "noInternet"
         ],
         "projectType": "native",
@@ -65,14 +65,26 @@
                     "type": "bitmap"
                 },
                 {
-                    "file": "icons/icon-no-phone-connection",
+                    "file": "icons/80px-icon-no-phone-connection.pdc",
                     "name": "IMAGE_NO_PHONE_CONNECTION",
                     "targetPlatforms": null,
                     "type": "raw"
                 },
                 {
-                    "file": "icons/icon-no-internet-connection",
+                    "file": "icons/80px-icon-no-internet-connection.pdc",
                     "name": "IMAGE_NO_INTERNET_CONNECTION",
+                    "targetPlatforms": null,
+                    "type": "raw"
+                },
+                {
+                    "file": "icons/25px-location.pdc",
+                    "name": "IMAGE_LOCATION",
+                    "targetPlatforms": null,
+                    "type": "raw"
+                },
+                {
+                    "file": "icons/25px-timeline-pin.pdc",
+                    "name": "IMAGE_TIMELINE_PIN",
                     "targetPlatforms": null,
                     "type": "raw"
                 }
