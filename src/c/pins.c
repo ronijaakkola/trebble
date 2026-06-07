@@ -144,7 +144,9 @@ int pins_build_codes_csv(char *buf, int size)
 	return len;
 }
 
-static void pin_action_performed(ActionMenu *action_menu, const ActionMenuItem *action, void *context)
+// Toggles the pin for the stop held in am_code/am_name/am_type and records a
+// confirmation message in am_feedback, vibrating to match the outcome.
+static void pins_perform_toggle(void)
 {
 	// Comparing the before/after state distinguishes a genuine pin from an unpin,
 	// and from a pin that was rejected because the list is full.
@@ -167,6 +169,12 @@ static void pin_action_performed(ActionMenu *action_menu, const ActionMenuItem *
 	am_feedback[sizeof(am_feedback) - 1] = '\0';
 }
 
+#ifndef PBL_PLATFORM_APLITE
+static void pin_action_performed(ActionMenu *action_menu, const ActionMenuItem *action, void *context)
+{
+	pins_perform_toggle();
+}
+
 static void pin_action_menu_did_close(ActionMenu *menu, const ActionMenuItem *performed_action, void *context)
 {
 	action_menu_hierarchy_destroy(action_menu_get_root_level(menu), NULL, NULL);
@@ -177,6 +185,7 @@ static void pin_action_menu_did_close(ActionMenu *menu, const ActionMenuItem *pe
 		feedback_window_show(am_feedback);
 	}
 }
+#endif
 
 void pins_show_action_menu(const char *code, const char *name, const char *type,
                            const char *pin_label, const char *unpin_label)
@@ -192,6 +201,17 @@ void pins_show_action_menu(const char *code, const char *name, const char *type,
 		am_type[0] = '\0';
 	}
 
+#ifdef PBL_PLATFORM_APLITE
+	// Aplite's heap is too small to open the ActionMenu window on top of the list
+	// it is invoked from (it faults trying to allocate). Pin/unpin directly and
+	// confirm with the lightweight feedback toast instead. The pin/unpin labels are
+	// unused here; the action is implied by the stop's current state.
+	(void) pin_label;
+	(void) unpin_label;
+	pins_perform_toggle();
+	feedback_window_show(am_feedback);
+	return;
+#else
 	bool is_pinned = pins_is_pinned(code);
 
 	ActionMenuLevel *root = action_menu_level_create(1);
@@ -208,4 +228,5 @@ void pins_show_action_menu(const char *code, const char *name, const char *type,
 		.did_close = pin_action_menu_did_close,
 	};
 	action_menu_open(&config);
+#endif
 }
