@@ -45,10 +45,12 @@ static void process_stop_tuple(Tuple *t)
 	uint32_t key = t->key;
 
 	if (key == MESSAGE_KEY_stopCode) {
-		strcpy(stops[stop_index].code, t->value->cstring);
+		strncpy(stops[stop_index].code, t->value->cstring, sizeof(stops[stop_index].code) - 1);
+		stops[stop_index].code[sizeof(stops[stop_index].code) - 1] = '\0';
 	}
 	else if (key == MESSAGE_KEY_stopName) {
-		strcpy(stops[stop_index].name, t->value->cstring);
+		strncpy(stops[stop_index].name, t->value->cstring, sizeof(stops[stop_index].name) - 1);
+		stops[stop_index].name[sizeof(stops[stop_index].name) - 1] = '\0';
 	}
 	else if (key == MESSAGE_KEY_stopDist) {
 		stops[stop_index].dist = t->value->int32;
