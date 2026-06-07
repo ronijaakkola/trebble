@@ -1,8 +1,8 @@
 #include <pebble.h>
 #include "home_window.h"
 #include "main_window.h"
-#include "favorites.h"
-#include "favorites_window.h"
+#include "pins.h"
+#include "pins_window.h"
 
 static Window *homeWindow;
 static MenuLayer *homeMenuLayer;
@@ -17,11 +17,11 @@ struct HomeItem {
 
 #define NUM_HOME_ITEMS 2
 #define HOME_ROW_NEARBY 0
-#define HOME_ROW_FAVORITES 1
+#define HOME_ROW_PINNED 1
 
 static struct HomeItem home_items[NUM_HOME_ITEMS] = {
 	{ "Nearby stops", "" },
-	{ "Favorites", "" }, // subtitle is filled in at draw time from the live count
+	{ "Pinned stops", "" }, // subtitle is filled in at draw time from the live count
 };
 
 uint16_t home_menu_get_num_sections_callback(MenuLayer *menu_layer, void *data)
@@ -68,13 +68,13 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 	struct HomeItem *item = &home_items[cell_index->row];
 	GRect bounds = layer_get_bounds(cell_layer);
 
-	// The Favorites subtitle reflects how many stops are currently saved.
-	char fav_subtitle[20];
+	// The Pinned stops subtitle reflects how many stops are currently pinned.
+	char pin_subtitle[20];
 	const char *subtitle = item->subtitle;
-	if (cell_index->row == HOME_ROW_FAVORITES) {
-		int count = favorites_count();
-		snprintf(fav_subtitle, sizeof(fav_subtitle), "%d saved", count);
-		subtitle = fav_subtitle;
+	if (cell_index->row == HOME_ROW_PINNED) {
+		int count = pins_count();
+		snprintf(pin_subtitle, sizeof(pin_subtitle), "%d stops", count);
+		subtitle = pin_subtitle;
 	}
 
 	#ifdef PBL_COLOR
@@ -108,8 +108,8 @@ void home_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, voi
 		case HOME_ROW_NEARBY:
 			window_stack_push(main_window_get_window(), true);
 			break;
-		case HOME_ROW_FAVORITES:
-			favorites_window_show();
+		case HOME_ROW_PINNED:
+			pins_window_show();
 			break;
 		default:
 			break;
@@ -153,8 +153,8 @@ void home_window_load(Window *window)
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
 }
 
-// Redraw on reveal so the Favorites count is up to date after the user adds or
-// removes favorites elsewhere.
+// Redraw on reveal so the Pinned stops count is up to date after the user pins
+// or unpins stops elsewhere.
 void home_window_appear(Window *window)
 {
 	if (homeMenuLayer) {

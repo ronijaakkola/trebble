@@ -2,7 +2,7 @@
 #include "main_window.h"
 #include "lines_window.h"
 #include "error_window.h"
-#include "favorites.h"
+#include "pins.h"
 
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
@@ -203,11 +203,11 @@ void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *da
 	lines_window_show(stops[cell_index->row].code, stops[cell_index->row].name);
 }
 
-// Long-pressing a stop opens an action menu to favorite/unfavorite it.
+// Long-pressing a stop opens an action menu to pin/unpin it.
 void menu_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 	struct StopInfo *stop = &stops[cell_index->row];
-	favorites_show_action_menu(stop->code, stop->name, stop->type, "Favorite stop", "Unfavorite stop");
+	pins_show_action_menu(stop->code, stop->name, stop->type, "Pin stop", "Unpin stop");
 }
 
 void setup_menu_layer(Window *window, Layer *window_layer)

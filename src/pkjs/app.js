@@ -210,12 +210,12 @@ function distanceMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// Resolves the favorited stops to name/mode/coordinates, computes the distance
+// Resolves the pinned stops to name/mode/coordinates, computes the distance
 // from the user's position (when known), and sends them to the watch ordered
 // nearest-first. When position is null the list is sent in its original order
 // with no distance.
-function getFavoriteStops(codes, lat, lon) {
-  var query = queries.createFavoritesQuery(codes);
+function getPinnedStops(codes, lat, lon) {
+  var query = queries.createPinnedStopsQuery(codes);
   var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
@@ -223,15 +223,15 @@ function getFavoriteStops(codes, lat, lon) {
       return;
     }
     if (req.status !== 200 || req.responseText === "") {
-      console.log("JS: Error loading favorite stops. Status: " + req.status);
-      Pebble.sendAppMessage({ favNoFound: 1 });
+      console.log("JS: Error loading pinned stops. Status: " + req.status);
+      Pebble.sendAppMessage({ pinNoFound: 1 });
       return;
     }
 
     var response = JSON.parse(req.responseText);
     if (!response || !response.data || !response.data.stops) {
-      console.log("JS: No valid favorites data in the GraphQL response.");
-      Pebble.sendAppMessage({ favNoFound: 1 });
+      console.log("JS: No valid pinned stops data in the GraphQL response.");
+      Pebble.sendAppMessage({ pinNoFound: 1 });
       return;
     }
 
@@ -259,17 +259,17 @@ function getFavoriteStops(codes, lat, lon) {
     }
 
     if (stops.length === 0) {
-      Pebble.sendAppMessage({ favNoFound: 1 });
+      Pebble.sendAppMessage({ pinNoFound: 1 });
       return;
     }
 
     var items = stops.map(function (stop) {
       return {
-        favMessage: 1,
-        favCode: stop.code,
-        favName: stop.name,
-        favDist: stop.dist,
-        favMode: stop.mode,
+        pinMessage: 1,
+        pinCode: stop.code,
+        pinName: stop.name,
+        pinDist: stop.dist,
+        pinMode: stop.mode,
       };
     });
     sendList(items);
@@ -278,9 +278,9 @@ function getFavoriteStops(codes, lat, lon) {
   req.send(query);
 }
 
-// Entry point for a favMessage request: parses the comma-separated codes, gets
-// the user's location, and fetches the favorite stops.
-function handleFavorites(csv) {
+// Entry point for a pinMessage request: parses the comma-separated codes, gets
+// the user's location, and fetches the pinned stops.
+function handlePinnedStops(csv) {
   var codes = csv.split(",").filter(function (code) {
     return code.length > 0;
   });
@@ -290,19 +290,19 @@ function handleFavorites(csv) {
   }
 
   if (debugLocation && isEmulator()) {
-    console.log("JS: Emulator detected, using debug location for favorites.");
-    getFavoriteStops(codes, debugLocation[0], debugLocation[1]);
+    console.log("JS: Emulator detected, using debug location for pinned stops.");
+    getPinnedStops(codes, debugLocation[0], debugLocation[1]);
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
     function (pos) {
-      getFavoriteStops(codes, pos.coords.latitude, pos.coords.longitude);
+      getPinnedStops(codes, pos.coords.latitude, pos.coords.longitude);
     },
     function (err) {
       console.warn("JS: GPS error (" + err.code + "): " + err.message);
-      // Still show favorites, just unsorted and without distances.
-      getFavoriteStops(codes, null, null);
+      // Still show pinned stops, just unsorted and without distances.
+      getPinnedStops(codes, null, null);
     },
     geolocationOptions
   );
@@ -355,9 +355,9 @@ Pebble.addEventListener("appmessage", function (e) {
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
     );
     getDepartingLines(e.payload.lineMessage);
-  } else if (typeof e.payload.favMessage !== "undefined") {
-    console.log("JS: Received favMessage with codes: " + e.payload.favMessage);
-    handleFavorites(e.payload.favMessage);
+  } else if (typeof e.payload.pinMessage !== "undefined") {
+    console.log("JS: Received pinMessage with codes: " + e.payload.pinMessage);
+    handlePinnedStops(e.payload.pinMessage);
   } else {
     console.log("JS: Received unknown message from Pebble!");
   }
