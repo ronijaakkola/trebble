@@ -65,13 +65,13 @@
                     "type": "bitmap"
                 },
                 {
-                    "file": "icons/icon-no-phone-connection",
+                    "file": "icons/80px-icon-no-phone-connection.pdc",
                     "name": "IMAGE_NO_PHONE_CONNECTION",
                     "targetPlatforms": null,
                     "type": "raw"
                 },
                 {
-                    "file": "icons/icon-no-internet-connection",
+                    "file": "icons/80px-icon-no-internet-connection.pdc",
                     "name": "IMAGE_NO_INTERNET_CONNECTION",
                     "targetPlatforms": null,
                     "type": "raw"
