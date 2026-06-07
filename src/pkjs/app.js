@@ -313,7 +313,10 @@ Pebble.addEventListener("ready", function (e) {
 });
 
 function convertSecondsToTime(seconds) {
-  const hours = Math.floor(seconds / 3600);
+  // Digitransit reports departures as seconds past midnight of the service day,
+  // so a trip running after midnight exceeds 24h (e.g. 87300 = "24:15"). Wrap the
+  // hour into 0-23 so it shows as a real clock time (00:15).
+  const hours = Math.floor(seconds / 3600) % 24;
   const minutes = Math.floor((seconds % 3600) / 60);
 
   // Pad hours and minutes with leading zeros if needed
