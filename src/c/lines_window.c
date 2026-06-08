@@ -4,6 +4,14 @@
 #include "error_window.h"
 #include "pins.h"
 
+// The "Show later" paging UI is left out of aplite: its ~24KB heap is already
+// tight for the departures view (which is why this window frees its layers when
+// covered), so aplite keeps the original single-window list. On every other
+// platform SHOW_LATER_ENABLED turns on the extra row and its handling.
+#ifndef PBL_PLATFORM_APLITE
+#define SHOW_LATER_ENABLED
+#endif
+
 static Window *linesWindow;
 static MenuLayer *lineMenuLayer;
 static StatusBarLayer *statusLayer;
@@ -14,6 +22,25 @@ static char stopCode[20];
 char stopName[30];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
+
+// Which window of departures to fetch. LOAD is the stop's first ("now") window,
+// REFRESH re-fetches the window currently shown (the once-a-minute update), and
+// MORE advances to the next window for the "Show later" row.
+typedef enum {
+	LINE_REQ_LOAD,
+	LINE_REQ_REFRESH,
+	LINE_REQ_MORE,
+} LineRequestType;
+
+#ifdef SHOW_LATER_ENABLED
+// While a "Show later" fetch is in flight the menu is blanked; this remembers the
+// count to restore if that fetch turns up no further departures. The timer shows
+// the "No later departures" notice for a couple of seconds before restoring.
+static int prev_line_amount;
+static AppTimer *no_more_timer;
+#endif
+
+static void lines_request_departures(LineRequestType type);
 
 static bool line_transfer_started;
 // Set while the once-a-minute auto refresh is in flight, so the loading
@@ -43,6 +70,43 @@ static void lines_set_loading(bool loading)
 	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
 }
+
+#ifdef SHOW_LATER_ENABLED
+// Fired ~2s after a "Show later" fetch reports no further departures: restores
+// the departures that were on screen before the fetch (still untouched in
+// `lines`, since the empty response sent no items) and parks the selection back
+// on the "Show later" row so the user can try again or scroll up.
+static void no_more_restore(void *data)
+{
+	no_more_timer = NULL;
+	lineAmount = prev_line_amount;
+	if (loadingLayer) {
+		text_layer_set_text(loadingLayer, "Loading..");
+	}
+	lines_set_loading(false);
+	if (lineMenuLayer) {
+		// The menu was hidden when "Show later" was pressed; reveal it again with
+		// the restored departures and park the selection on the "Show later" row.
+		layer_set_hidden(menu_layer_get_layer(lineMenuLayer), false);
+		menu_layer_reload_data(lineMenuLayer);
+		menu_layer_set_selected_index(lineMenuLayer, MenuIndex(0, lineAmount), MenuRowAlignCenter, false);
+	}
+}
+
+// Shows "No later departures" where the "Loading.." text was, then schedules the
+// previous list to come back. Used when a "Show later" fetch finds nothing more.
+static void lines_show_no_more(void)
+{
+	if (loadingLayer) {
+		text_layer_set_text(loadingLayer, "No later departures");
+	}
+	lines_set_loading(true);
+	if (no_more_timer) {
+		app_timer_cancel(no_more_timer);
+	}
+	no_more_timer = app_timer_register(2000, no_more_restore, NULL);
+}
+#endif // SHOW_LATER_ENABLED
 
 // Maps a Digitransit vehicle mode string to a single-letter type indicator.
 // Unknown modes produce an empty string so nothing is shown.
@@ -112,6 +176,17 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 		return;
 	}
 
+#ifdef SHOW_LATER_ENABLED
+	if (dict_find(iter, MESSAGE_KEY_lineNoMore)) {
+		// The "Show later" fetch found no further departures. Briefly say so, then
+		// restore the list we had; `lines` was never overwritten, so it survives.
+		APP_LOG(APP_LOG_LEVEL_INFO, "LinesWindow: No later departures available.");
+		line_transfer_started = false;
+		lines_show_no_more();
+		return;
+	}
+#endif
+
 	Tuple *t = dict_find(iter, MESSAGE_KEY_lineMessage);
 	if (t) {
 		if (!line_transfer_started) {
@@ -140,9 +215,22 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 				menu_layer_reload_data(lineMenuLayer);
 			}
 			// On the once-a-minute refresh the times just change in place: no
-			// loading indicator was shown and no vibration is wanted.
+			// loading indicator was shown and no vibration is wanted. A foreground
+			// load (initial or "Show later") reveals the list and confirms with a
+			// short pulse. The "Show later" path hid the menu while loading, so
+			// unhide it here; it already sits at the top (with its header, first row
+			// selected) from being rebuilt out of the empty state.
 			if (!line_silent_refresh) {
 				lines_set_loading(false);
+#ifdef SHOW_LATER_ENABLED
+				if (lineMenuLayer) {
+					layer_set_hidden(menu_layer_get_layer(lineMenuLayer), false);
+					// Put focus on the first departure. MenuRowAlignNone selects it
+					// without scrolling, so the header stays visible (the menu is
+					// already at the top from the empty-state reset).
+					menu_layer_set_selected_index(lineMenuLayer, MenuIndex(0, 0), MenuRowAlignNone, false);
+				}
+#endif
 				vibes_short_pulse();
 			}
 			return;
@@ -189,15 +277,35 @@ uint16_t lines_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_ind
 {
 	switch (section_index) {
 		case 0:
+#ifdef SHOW_LATER_ENABLED
+			// One extra row for the "Show later" action, but only once there are
+			// departures to extend (not while loading or when the stop is empty).
+			return lineAmount > 0 ? lineAmount + 1 : 0;
+#else
 			return lineAmount;
+#endif
 		default:
 			return 0;
 	}
 }
 
+#ifdef SHOW_LATER_ENABLED
+// True for the synthetic "Show later" row, which sits just past the departures.
+static bool is_show_later_row(const MenuIndex *cell_index)
+{
+	return cell_index->section == 0 && cell_index->row == lineAmount;
+}
+#endif
+
 int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 	if(cell_index->section == 0) {
+#ifdef SHOW_LATER_ENABLED
+		// The "Show later" action is a plain single-line row.
+		if (is_show_later_row(cell_index)) {
+			return 44;
+		}
+#endif
 		#if defined(PBL_ROUND)
 			return 86; // Extra room for the "X min" line under the time
 		#elif defined(PBL_PLATFORM_EMERY)
@@ -271,6 +379,23 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		return;
 	}
 
+#ifdef SHOW_LATER_ENABLED
+	// The synthetic last row is the "Show later" action, not a departure.
+	if (is_show_later_row(cell_index)) {
+		#ifdef PBL_COLOR
+			GColor action_color = GColorBlack;
+		#else
+			GColor action_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
+		#endif
+		GRect bounds = layer_get_bounds(cell_layer);
+		// Nudge the single line down so it sits centered in the 44px row.
+		bounds.origin.y += (bounds.size.h - 22) / 2;
+		graphics_context_set_text_color(ctx, action_color);
+		graphics_draw_text(ctx, "Show later", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+		return;
+	}
+#endif
+
 	struct LineInfo *line = &lines[cell_index->row];
 	// On color watches the selection is light gray, so text stays black. On
 	// black-and-white watches the selection is black, so highlighted text is white.
@@ -338,14 +463,43 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 
 void lines_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
-	return;
+#ifdef SHOW_LATER_ENABLED
+	// Only the "Show later" row is actionable; selecting a departure does nothing.
+	if (!is_show_later_row(cell_index) || lineAmount == 0) {
+		return;
+	}
+
+	// Empty the menu and show the loading indicator while the next window loads.
+	// The departures stay in `lines` so they can be restored if there are no more.
+	// The menu layer is hidden outright (not just reloaded to zero rows): reloading
+	// a populated menu to empty can leave its section header drawn, which would show
+	// a second stop-name title behind the loading overlay. Going through the empty
+	// state also resets the menu to the top with the first row selected, so the
+	// populated next window starts at its first departure.
+	prev_line_amount = lineAmount;
+	lineAmount = 0;
+	if (lineMenuLayer) {
+		layer_set_hidden(menu_layer_get_layer(lineMenuLayer), true);
+		menu_layer_reload_data(lineMenuLayer);
+	}
+	if (loadingLayer) {
+		text_layer_set_text(loadingLayer, "Loading..");
+	}
+	lines_set_loading(true);
+	lines_request_departures(LINE_REQ_MORE);
+#endif
 }
 
 // Long-pressing a departure pins/unpins the stop it belongs to. The stop's
 // vehicle mode is not known here, so the type is left blank; the pinned stops
-// list fills it in from live data.
+// list fills it in from live data. The "Show later" row has no pin action.
 void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef SHOW_LATER_ENABLED
+	if (is_show_later_row(cell_index)) {
+		return;
+	}
+#endif
 	pins_show_action_menu(stopCode, stopName, "", "Pin stop", "Unpin stop");
 }
 
@@ -443,13 +597,14 @@ static void lines_destroy_ui(void)
 	}
 }
 
-// Requests the selected stop's departing lines from the JS component. This
-// replaces the underlying window's inbox handler while departures are on top.
-// When `silent` is set (the once-a-minute auto refresh) the loading indicator
-// and completion vibration are suppressed so the list updates in place.
-static void lines_request_departures(bool silent)
+// Requests a window of the selected stop's departing lines from the JS component.
+// This replaces the underlying window's inbox handler while departures are on
+// top. A REFRESH (the once-a-minute auto update) is "silent": the loading
+// indicator and completion vibration are suppressed so the list updates in place.
+// The stop code is sent under a key that tells JS which window to return.
+static void lines_request_departures(LineRequestType type)
 {
-	line_silent_refresh = silent;
+	line_silent_refresh = (type == LINE_REQ_REFRESH);
 
 	app_message_register_inbox_received(lines_message_inbox);
 	line_transfer_started = false;
@@ -460,7 +615,10 @@ static void lines_request_departures(bool silent)
 		APP_LOG(APP_LOG_LEVEL_ERROR, "DictionaryIterator NULL!");
 		return;
 	}
-	dict_write_cstring(iter, MESSAGE_KEY_lineMessage, (char *)stopCode);
+	uint32_t key = type == LINE_REQ_MORE ? MESSAGE_KEY_lineMore
+		: type == LINE_REQ_REFRESH ? MESSAGE_KEY_lineRefresh
+		: MESSAGE_KEY_lineMessage;
+	dict_write_cstring(iter, key, (char *)stopCode);
 	dict_write_end(iter);
 	app_message_outbox_send();
 }
@@ -470,7 +628,13 @@ static void lines_request_departures(bool silent)
 // departures appear without a loading flash.
 static void lines_minute_tick(struct tm *tick_time, TimeUnits units_changed)
 {
-	lines_request_departures(true);
+	// Skip while a foreground load is on screen (initial load, a "Show later"
+	// fetch, or the "No later departures" notice): its own completion updates the
+	// list, and a silent refresh would overwrite that work or the retained list.
+	if (loadingLayer && !layer_get_hidden(text_layer_get_layer(loadingLayer))) {
+		return;
+	}
+	lines_request_departures(LINE_REQ_REFRESH);
 }
 
 void lines_window_load(Window *window)
@@ -481,7 +645,7 @@ void lines_window_load(Window *window)
 	lines_build_ui(window);
 	lines_set_loading(true);
 
-	lines_request_departures(false);
+	lines_request_departures(LINE_REQ_LOAD);
 }
 
 // Rebuild the layers if they were freed while this window was covered (e.g. by the
@@ -508,6 +672,19 @@ void lines_window_appear(Window *window)
 void lines_window_disappear(Window *window)
 {
 	tick_timer_service_unsubscribe();
+#ifdef SHOW_LATER_ENABLED
+	// Cancel a pending "No later departures" restore so it cannot fire against the
+	// freed layers, and put back the retained count it would have restored so the
+	// departures in `lines` re-render (rather than staying blank) on the next reveal.
+	if (no_more_timer) {
+		app_timer_cancel(no_more_timer);
+		no_more_timer = NULL;
+		lineAmount = prev_line_amount;
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "Loading..");
+		}
+	}
+#endif
 	lines_destroy_ui();
 }
 
