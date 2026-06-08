@@ -109,7 +109,7 @@ static void lines_show_no_more(void)
 	if (no_more_timer) {
 		app_timer_cancel(no_more_timer);
 	}
-	no_more_timer = app_timer_register(2000, no_more_restore, NULL);
+	no_more_timer = app_timer_register(3000, no_more_restore, NULL);
 }
 #endif // SHOW_LATER_ENABLED
 
