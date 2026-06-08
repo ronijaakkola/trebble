@@ -16,12 +16,17 @@ function createStopsQuery(latitude, longitude, radius, limit) {
 }`;
 }
 
-function createDeparturesQuery(stopCode) {
+function createDeparturesQuery(stopCode, startTime, numberOfDepartures) {
+  // startTime is absolute epoch seconds; 0 means "now", in which case it is
+  // omitted so the API defaults to the current time. A wide timeRange lets the
+  // "Show later" windows (which start well into the future) still return a full
+  // page of departures rather than being cut off by a short default window.
+  var startArg = startTime && startTime > 0 ? `, startTime: ${startTime}` : "";
   return `
 {
   stop(id: "${stopCode}") {
     name
-    stoptimesWithoutPatterns(omitNonPickups: true, numberOfDepartures: 10) {
+    stoptimesWithoutPatterns(omitNonPickups: true, numberOfDepartures: ${numberOfDepartures}${startArg}, timeRange: 604800) {
       scheduledDeparture
       realtimeDeparture
       realtime

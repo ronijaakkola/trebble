@@ -33,6 +33,13 @@ const stopsLimit = 10;
 // Departure lines info parameters
 const lineLimit = 10;
 
+// Departure paging state. `departureStartTime` is the absolute epoch-seconds the
+// currently shown window begins at (0 = "now"); `departureNextStartTime` is where
+// the next "Show later" window should begin (just after the last departure we
+// sent). The watch holds no extra departures, so paging never grows its memory.
+var departureStartTime = 0;
+var departureNextStartTime = 0;
+
 function sendNextItem(items, index) {
   // Build message
   var dict = items[index];
@@ -132,8 +139,23 @@ function getStopsFromLocation(pos) {
   req.send(query);
 }
 
-function getDepartingLines(stopCode) {
-  var query = queries.createDeparturesQuery(stopCode);
+// Fetches departures for a stop. `mode` selects the window:
+//   "load"    - the stop's first ("now") window; resets the paging cursor.
+//   "refresh" - re-fetch the window currently shown (the once-a-minute update),
+//               keeping the user's place if they have paged forward.
+//   "more"    - the next window, starting just after the last departure shown.
+// When a "more" request finds nothing, `lineNoMore` is sent so the watch can
+// keep the current list instead of blanking it like `lineNoFound` does.
+function getDepartingLines(stopCode, mode) {
+  if (mode === "load") {
+    departureStartTime = 0;
+  } else if (mode === "more") {
+    departureStartTime = departureNextStartTime;
+  }
+  // "refresh" keeps departureStartTime as-is.
+
+  var emptyMessage = mode === "more" ? { lineNoMore: 1 } : { lineNoFound: 1 };
+  var query = queries.createDeparturesQuery(stopCode, departureStartTime, lineLimit);
   var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
@@ -141,7 +163,7 @@ function getDepartingLines(stopCode) {
       if (req.status === 200) {
         if (req.responseText === "") {
           console.log("JS: Lines request returned no departing lines.");
-          Pebble.sendAppMessage({ lineNoFound: 1 });
+          Pebble.sendAppMessage(emptyMessage);
           return;
         }
         var response = JSON.parse(req.responseText);
@@ -151,14 +173,22 @@ function getDepartingLines(stopCode) {
           var stoptimes = stop.stoptimesWithoutPatterns;
 
           if (!stoptimes || stoptimes.length === 0) {
-            console.log("JS: No departing lines found for this stop.");
-            Pebble.sendAppMessage({ lineNoFound: 1 });
+            console.log("JS: No departing lines found for this window.");
+            Pebble.sendAppMessage(emptyMessage);
             return;
           }
 
-          var lines = stoptimes
-            .slice(0, lineLimit)
-            .map((line) => {
+          var departures = stoptimes.slice(0, lineLimit);
+
+          // Remember where the next "Show later" window should begin: just after
+          // the last departure in this one (absolute epoch seconds).
+          var lastLine = departures[departures.length - 1];
+          var lastSecs = lastLine.realtime
+            ? lastLine.realtimeDeparture
+            : lastLine.scheduledDeparture;
+          departureNextStartTime = lastLine.serviceDay + lastSecs + 1;
+
+          var lines = departures.map((line) => {
               // Use the realtime prediction when it is actually available;
               // otherwise realtimeDeparture just echoes the scheduled value.
               var isRealtime = line.realtime === true;
@@ -179,13 +209,13 @@ function getDepartingLines(stopCode) {
           sendList(lines);
         } else {
           console.log("JS: No valid line data in the GraphQL response.");
-          Pebble.sendAppMessage({ lineNoFound: 1 });
+          Pebble.sendAppMessage(emptyMessage);
         }
       } else {
         console.log(
           "JS: Error in getting lines for stop. Status: " + req.status
         );
-        Pebble.sendAppMessage({ lineNoFound: 1 });
+        Pebble.sendAppMessage(emptyMessage);
       }
     }
   };
@@ -357,7 +387,17 @@ Pebble.addEventListener("appmessage", function (e) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
     );
-    getDepartingLines(e.payload.lineMessage);
+    getDepartingLines(e.payload.lineMessage, "load");
+  } else if (e.payload.lineRefresh) {
+    console.log(
+      "JS: Received lineRefresh with stopCode: " + e.payload.lineRefresh
+    );
+    getDepartingLines(e.payload.lineRefresh, "refresh");
+  } else if (e.payload.lineMore) {
+    console.log(
+      "JS: Received lineMore with stopCode: " + e.payload.lineMore
+    );
+    getDepartingLines(e.payload.lineMore, "more");
   } else if (typeof e.payload.pinMessage !== "undefined") {
     console.log("JS: Received pinMessage with codes: " + e.payload.pinMessage);
     handlePinnedStops(e.payload.pinMessage);
