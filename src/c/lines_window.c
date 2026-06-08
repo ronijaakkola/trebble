@@ -16,6 +16,10 @@ static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
 static bool line_transfer_started;
+// Set while the once-a-minute auto refresh is in flight, so the loading
+// indicator and the completion vibration are suppressed and a failed refresh
+// keeps the last departures on screen instead of erroring out.
+static bool line_silent_refresh;
 static bool line_got_name;
 static bool line_got_time;
 static bool line_got_dir;
@@ -98,6 +102,11 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
 		line_transfer_started = false;
+		// A failed background refresh keeps the last departures on screen rather
+		// than covering them with an error; the next minute's refresh tries again.
+		if (line_silent_refresh) {
+			return;
+		}
 		error_window_set_error("No internet connection", ERROR_ICON_NO_INTERNET);
 		error_window_show();
 		return;
@@ -130,8 +139,12 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 			if (lineMenuLayer) {
 				menu_layer_reload_data(lineMenuLayer);
 			}
-			lines_set_loading(false);
-			vibes_short_pulse();
+			// On the once-a-minute refresh the times just change in place: no
+			// loading indicator was shown and no vibration is wanted.
+			if (!line_silent_refresh) {
+				lines_set_loading(false);
+				vibes_short_pulse();
+			}
 			return;
 		}
 	}
@@ -143,7 +156,9 @@ void lines_message_inbox(DictionaryIterator *iter, void *context)
 			// Stay on the lines screen (empty menu) and replace the loading
 			// indicator with a "No departures" message instead of erroring out.
 			line_transfer_started = false;
-			if (loadingLayer) {
+			// On a background refresh keep the departures already shown rather than
+			// wiping them; only show "No departures" on an explicit load.
+			if (!line_silent_refresh && loadingLayer) {
 				text_layer_set_text(loadingLayer, "No departures");
 			}
 			return;
@@ -428,16 +443,14 @@ static void lines_destroy_ui(void)
 	}
 }
 
-void lines_window_load(Window *window)
+// Requests the selected stop's departing lines from the JS component. This
+// replaces the underlying window's inbox handler while departures are on top.
+// When `silent` is set (the once-a-minute auto refresh) the loading indicator
+// and completion vibration are suppressed so the list updates in place.
+static void lines_request_departures(bool silent)
 {
-	// Clear any departures left over from a previous visit so the (reused) menu
-	// does not render stale rows (and its header) behind the loading overlay.
-	lineAmount = 0;
-	lines_build_ui(window);
-	lines_set_loading(true);
+	line_silent_refresh = silent;
 
-	// Request departing lines for the selected stop from the JS component. This
-	// replaces the stops window's inbox handler while departures are on top.
 	app_message_register_inbox_received(lines_message_inbox);
 	line_transfer_started = false;
 
@@ -452,6 +465,25 @@ void lines_window_load(Window *window)
 	app_message_outbox_send();
 }
 
+// Fired once a minute (on the wall-clock minute boundary) while the departures
+// screen is showing. Silently re-fetches so the times stay current and any new
+// departures appear without a loading flash.
+static void lines_minute_tick(struct tm *tick_time, TimeUnits units_changed)
+{
+	lines_request_departures(true);
+}
+
+void lines_window_load(Window *window)
+{
+	// Clear any departures left over from a previous visit so the (reused) menu
+	// does not render stale rows (and its header) behind the loading overlay.
+	lineAmount = 0;
+	lines_build_ui(window);
+	lines_set_loading(true);
+
+	lines_request_departures(false);
+}
+
 // Rebuild the layers if they were freed while this window was covered (e.g. by the
 // error, action-menu or feedback window), re-rendering the retained departures.
 void lines_window_appear(Window *window)
@@ -463,12 +495,19 @@ void lines_window_appear(Window *window)
 	}
 
 	app_message_register_inbox_received(lines_message_inbox);
+
+	// Keep the departure times current while the user waits for the bus: refresh
+	// once a minute, but only while this screen is actually showing. The matching
+	// unsubscribe in the disappear handler stops covered/other screens (menu,
+	// pins, stop) from being periodically updated.
+	tick_timer_service_subscribe(MINUTE_UNIT, lines_minute_tick);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void lines_window_disappear(Window *window)
 {
+	tick_timer_service_unsubscribe();
 	lines_destroy_ui();
 }
 
