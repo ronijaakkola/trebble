@@ -16,6 +16,11 @@ static struct StopInfo pinStops[NUM_STOPS];
 static bool pin_transfer_started;
 static int pin_index;
 
+// Remembers the highlighted row while the menu layer is freed (e.g. with the
+// departures window on top) so returning to this list restores the selected stop
+// rather than resetting to the top.
+static uint16_t savedSelectedRow = 0;
+
 // Shows the title + centered status text (loading / empty / error), or hides
 // them to reveal the populated pinned stops menu (whose own header takes over).
 static void pins_set_loading(bool loading)
@@ -289,6 +294,7 @@ static void pins_build_ui(Window *window)
 static void pins_destroy_ui(void)
 {
 	if (pinsMenuLayer) {
+		savedSelectedRow = menu_layer_get_selected_index(pinsMenuLayer).row;
 		menu_layer_destroy(pinsMenuLayer);
 		pinsMenuLayer = NULL;
 	}
@@ -383,6 +389,10 @@ void pins_window_appear(Window *window)
 		// No rows to show (e.g. everything was unpinned): show the empty state.
 		if (pinAmount == 0 && loadingLayer) {
 			text_layer_set_text(loadingLayer, "No pinned stops");
+		} else if (pinAmount > 0) {
+			// Restore the row the user left on, clamped in case the list shrank.
+			uint16_t row = savedSelectedRow < (uint16_t)pinAmount ? savedSelectedRow : (uint16_t)(pinAmount - 1);
+			menu_layer_set_selected_index(pinsMenuLayer, MenuIndex(0, row), MenuRowAlignCenter, false);
 		}
 	}
 

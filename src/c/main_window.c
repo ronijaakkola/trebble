@@ -15,6 +15,11 @@ static struct StopInfo stops[NUM_STOPS];
 static bool stop_transfer_started;
 static int stop_index;
 
+// Remembers the highlighted row while the menu layer is freed (e.g. with the
+// departures window on top) so returning to this list restores the tapped stop
+// rather than resetting to the top.
+static uint16_t savedSelectedRow = 0;
+
 // Shows the title + centered "Loading.." text while waiting for data, or hides
 // them to reveal the populated stops menu (whose own section header takes over).
 static void main_set_loading(bool loading)
@@ -298,6 +303,7 @@ static void main_build_ui(Window *window)
 static void main_destroy_ui(void)
 {
 	if (mainMenuLayer) {
+		savedSelectedRow = menu_layer_get_selected_index(mainMenuLayer).row;
 		menu_layer_destroy(mainMenuLayer);
 		mainMenuLayer = NULL;
 	}
@@ -347,6 +353,11 @@ void main_window_appear(Window *window)
 		main_build_ui(window);
 		menu_layer_reload_data(mainMenuLayer);
 		main_set_loading(stopAmount == 0);
+		// Restore the row the user left on, clamped in case the list shrank.
+		if (stopAmount > 0) {
+			uint16_t row = savedSelectedRow < (uint16_t)stopAmount ? savedSelectedRow : (uint16_t)(stopAmount - 1);
+			menu_layer_set_selected_index(mainMenuLayer, MenuIndex(0, row), MenuRowAlignCenter, false);
+		}
 	}
 
 	main_window_register_inbox();

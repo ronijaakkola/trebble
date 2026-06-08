@@ -23,6 +23,11 @@ char stopName[30];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
+// Remembers the highlighted row while the menu layer is freed (e.g. with the
+// action-menu or feedback window on top) so returning to the departures list
+// restores the selected row rather than resetting to the top.
+static uint16_t savedSelectedRow = 0;
+
 // Which window of departures to fetch. LOAD is the stop's first ("now") window,
 // REFRESH re-fetches the window currently shown (the once-a-minute update), and
 // MORE advances to the next window for the "Show later" row.
@@ -580,6 +585,7 @@ static void lines_build_ui(Window *window)
 static void lines_destroy_ui(void)
 {
 	if (lineMenuLayer) {
+		savedSelectedRow = menu_layer_get_selected_index(lineMenuLayer).row;
 		menu_layer_destroy(lineMenuLayer);
 		lineMenuLayer = NULL;
 	}
@@ -656,6 +662,13 @@ void lines_window_appear(Window *window)
 		lines_build_ui(window);
 		menu_layer_reload_data(lineMenuLayer);
 		lines_set_loading(lineAmount == 0);
+		// Restore the row the user left on, clamped to the rows now on screen
+		// (which include the "Show later" row where enabled).
+		uint16_t rows = lines_get_num_rows_callback(lineMenuLayer, 0, NULL);
+		if (rows > 0) {
+			uint16_t row = savedSelectedRow < rows ? savedSelectedRow : (uint16_t)(rows - 1);
+			menu_layer_set_selected_index(lineMenuLayer, MenuIndex(0, row), MenuRowAlignCenter, false);
+		}
 	}
 
 	app_message_register_inbox_received(lines_message_inbox);

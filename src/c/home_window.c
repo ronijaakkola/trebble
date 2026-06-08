@@ -8,6 +8,11 @@ static Window *homeWindow;
 static MenuLayer *homeMenuLayer;
 static StatusBarLayer *statusLayer;
 
+// The highlighted row is remembered across the menu layer being freed (while a
+// sub-window is on top) and rebuilt, so going back to the home menu returns to the
+// row the user left rather than resetting to the top.
+static uint16_t savedSelectedRow = 0;
+
 // PDC row icons, one per home item. Loaded on window load and reused for every
 // redraw, mirroring how the error window holds its PDC icon.
 static GDrawCommandImage *nearbyIcon;
@@ -192,12 +197,14 @@ static void home_build_ui(Window *window)
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
 }
 
-// Frees the home menu, its icons and status bar. The home menu has no dynamic
-// state to preserve (it is rebuilt identically), and freeing it whenever another
-// window is on top keeps aplite's small heap available for that window.
+// Frees the home menu, its icons and status bar. The selected row is remembered
+// first (see savedSelectedRow) so it can be restored when the menu is rebuilt;
+// freeing the rest whenever another window is on top keeps aplite's small heap
+// available for that window.
 static void home_destroy_ui(void)
 {
 	if (homeMenuLayer) {
+		savedSelectedRow = menu_layer_get_selected_index(homeMenuLayer).row;
 		menu_layer_destroy(homeMenuLayer);
 		homeMenuLayer = NULL;
 	}
@@ -227,6 +234,8 @@ void home_window_appear(Window *window)
 	home_build_ui(window);
 	if (homeMenuLayer) {
 		menu_layer_reload_data(homeMenuLayer);
+		// Restore the row the user left on before the menu was freed.
+		menu_layer_set_selected_index(homeMenuLayer, MenuIndex(0, savedSelectedRow), MenuRowAlignCenter, false);
 	}
 }
 
