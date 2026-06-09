@@ -1,4 +1,5 @@
 build/
+release/
 secrets.js
 .lock-waf_linux2_build
 .lock-waf_darwin_build

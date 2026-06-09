@@ -1,0 +1,25 @@
+{
+  "skill_name": "release-build",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Can you get Trebble ready to ship? I want the build file and fresh screenshots of every screen for the app store.",
+      "expected_output": "Runs scripts/release.sh; produces release/builds/trebble-<version>.pbw and release/screenshots/<platform>/NN-<screen>.png for every target platform; reports the bundle path and screenshot count."
+    },
+    {
+      "id": 2,
+      "prompt": "Regenerate the app screenshots for all the watch models — the README ones are stale.",
+      "expected_output": "Runs the screenshot pass across all platforms (build optional), saving numbered per-screen PNGs under release/screenshots/<platform>/."
+    },
+    {
+      "id": 3,
+      "prompt": "Just build me the release bundle, skip the screenshots for now.",
+      "expected_output": "Runs scripts/release.sh --no-shots; produces only release/builds/trebble-<version>.pbw."
+    },
+    {
+      "id": 4,
+      "prompt": "The chalk and basalt screenshots came out blank last time, can you redo just those two?",
+      "expected_output": "Runs scripts/release.sh basalt chalk, optionally with a larger TREBBLE_LOAD_WAIT, capturing only those platforms."
+    }
+  ]
+}
