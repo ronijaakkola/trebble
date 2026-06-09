@@ -188,7 +188,7 @@ static void home_build_ui(Window *window)
 
 	home_setup_menu_layer(window, window_layer);
 
-	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_LOCATION);
+	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_STOP);
 	pinnedIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TIMELINE_PIN);
 
 	statusLayer = status_bar_layer_create();

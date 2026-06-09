@@ -191,18 +191,18 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Colored type dot on the left: bus is blue, tram red. On black-and-white
-	// watches both fall back to black. Unknown types get no dot.
+	// Accent bar down the left edge of the cell: blue for bus, red for tram.
+	// Unknown types get none. Falls back to black on watches without color.
 	int16_t cy = bounds.size.h / 2;
 	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-		GColor circle_color = stop->type[0] == 'B'
+		GColor bar_color = stop->type[0] == 'B'
 			? COLOR_FALLBACK(GColorCobaltBlue, GColorBlack)
 			: COLOR_FALLBACK(GColorRed, GColorBlack);
-		graphics_context_set_fill_color(ctx, circle_color);
-		graphics_fill_circle(ctx, GPoint(16, cy-4), 12);
+		graphics_context_set_fill_color(ctx, bar_color);
+		graphics_fill_rect(ctx, GRect(0, 0, 2, bounds.size.h), 0, GCornerNone);
 	}
 
-	int16_t text_x = 34;
+	int16_t text_x = 8;
 	int16_t text_w = bounds.size.w - text_x - 4;
 
 	graphics_context_set_text_color(ctx, text_color);

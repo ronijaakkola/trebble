@@ -10,6 +10,8 @@ static MenuLayer *pinsMenuLayer;
 static StatusBarLayer *statusLayer;
 static TextLayer *loadingLayer;
 static TextLayer *titleLayer;
+static GDrawCommandImage *busIcon;
+static GDrawCommandImage *tramIcon;
 
 static int pinAmount = 0;
 static struct StopInfo pinStops[NUM_STOPS];
@@ -188,17 +190,18 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Colored type dot on the left, mirroring the nearby stops list.
+	// Bus/tram glyph on the left, vertically centered, mirroring the nearby stops
+	// list. (Tinting the glyph blue/red is handled separately later.)
 	int16_t cy = bounds.size.h / 2;
 	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-		GColor circle_color = stop->type[0] == 'B'
-			? COLOR_FALLBACK(GColorCobaltBlue, GColorBlack)
-			: COLOR_FALLBACK(GColorRed, GColorBlack);
-		graphics_context_set_fill_color(ctx, circle_color);
-		graphics_fill_circle(ctx, GPoint(16, cy), 12);
+		GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon : tramIcon;
+		if (icon) {
+			GSize icon_size = gdraw_command_image_get_bounds_size(icon);
+			gdraw_command_image_draw(ctx, icon, GPoint(16 - icon_size.w / 2, cy - icon_size.h / 2));
+		}
 	}
 
-	int16_t text_x = 34;
+	int16_t text_x = 36;
 	int16_t text_w = bounds.size.w - text_x - 4;
 
 	// The pinned stops list shows only the stop name (no distance), so it is
@@ -282,6 +285,9 @@ static void pins_build_ui(Window *window)
 	setup_pins_menu_layer(window, window_layer);
 	setup_pins_loading_layer(window_layer);
 
+	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
+	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
@@ -309,6 +315,14 @@ static void pins_destroy_ui(void)
 	if (titleLayer) {
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
+	}
+	if (busIcon) {
+		gdraw_command_image_destroy(busIcon);
+		busIcon = NULL;
+	}
+	if (tramIcon) {
+		gdraw_command_image_destroy(tramIcon);
+		tramIcon = NULL;
 	}
 }
 

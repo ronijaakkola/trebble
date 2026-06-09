@@ -80,14 +80,26 @@
                     "type": "raw"
                 },
                 {
-                    "file": "icons/25px-location.pdc",
-                    "name": "IMAGE_LOCATION",
+                    "file": "icons/25px-stop.pdc",
+                    "name": "IMAGE_STOP",
                     "targetPlatforms": null,
                     "type": "raw"
                 },
                 {
                     "file": "icons/25px-timeline-pin.pdc",
                     "name": "IMAGE_TIMELINE_PIN",
+                    "targetPlatforms": null,
+                    "type": "raw"
+                },
+                {
+                    "file": "icons/25px-bus.pdc",
+                    "name": "IMAGE_BUS",
+                    "targetPlatforms": null,
+                    "type": "raw"
+                },
+                {
+                    "file": "icons/25px-tram.pdc",
+                    "name": "IMAGE_TRAM",
                     "targetPlatforms": null,
                     "type": "raw"
                 }
