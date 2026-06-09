@@ -191,18 +191,21 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Accent bar down the left edge of the cell: blue for bus, red for tram.
-	// Unknown types get none. Falls back to black on watches without color.
+	// Small accent dot just before the stop title: blue for bus, red for tram.
+	// Color watches only; B&W watches keep the plain left-aligned title.
 	int16_t cy = bounds.size.h / 2;
-	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-		GColor bar_color = stop->type[0] == 'B'
-			? COLOR_FALLBACK(GColorCobaltBlue, GColorBlack)
-			: COLOR_FALLBACK(GColorRed, GColorBlack);
-		graphics_context_set_fill_color(ctx, bar_color);
-		graphics_fill_rect(ctx, GRect(0, 0, 2, bounds.size.h), 0, GCornerNone);
-	}
-
 	int16_t text_x = 8;
+	#ifdef PBL_COLOR
+		if (stop->type[0] == 'B' || stop->type[0] == 'T') {
+			GColor dot_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+			graphics_context_set_fill_color(ctx, dot_color);
+			// Centered vertically on the title line, with the title nudged
+			// right to clear the dot.
+			graphics_fill_circle(ctx, GPoint(text_x + 4, cy - 10), 4);
+			text_x += 14;
+		}
+	#endif
+
 	int16_t text_w = bounds.size.w - text_x - 4;
 
 	graphics_context_set_text_color(ctx, text_color);
