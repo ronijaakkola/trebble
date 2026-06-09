@@ -8,7 +8,11 @@
 #include "pins_window.h"
 #include "feedback_window.h"
 
-#ifdef LOW_MEMORY_DEVICE
+// Aplite has only ~24KB of app heap, so a 4KB inbox would starve the departures
+// window (its menu then runs out of memory mid-scroll and the app faults). A
+// 512-byte inbox comfortably holds a single stop/line message there; the roomier
+// platforms keep the larger buffer.
+#ifdef PBL_PLATFORM_APLITE
 #define MAX_INBOX_SIZE 512
 #else
 #define MAX_INBOX_SIZE 4096
