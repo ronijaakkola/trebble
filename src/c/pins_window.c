@@ -10,8 +10,6 @@ static MenuLayer *pinsMenuLayer;
 static StatusBarLayer *statusLayer;
 static TextLayer *loadingLayer;
 static TextLayer *titleLayer;
-static GDrawCommandImage *busIcon;
-static GDrawCommandImage *tramIcon;
 
 static int pinAmount = 0;
 static struct StopInfo pinStops[NUM_STOPS];
@@ -190,18 +188,35 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Bus/tram glyph on the left, vertically centered, mirroring the nearby stops
-	// list. (Tinting the glyph blue/red is handled separately later.)
+	// Type badge on the left, vertically centered, mirroring the nearby stops list:
+	// a small rounded rectangle with a white letter (B for bus, T for tram). On
+	// color watches it is colored by type and stays colored when selected; on B&W
+	// watches the black badge inverts to a white badge with a black letter on the
+	// solid-black selected row so it stays visible.
 	int16_t cy = bounds.size.h / 2;
+	int16_t text_x = 8;
 	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-		GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon : tramIcon;
-		if (icon) {
-			GSize icon_size = gdraw_command_image_get_bounds_size(icon);
-			gdraw_command_image_draw(ctx, icon, GPoint(16 - icon_size.w / 2, cy - icon_size.h / 2));
-		}
+		#ifdef PBL_COLOR
+			GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+			GColor letter_color = GColorWhite;
+		#else
+			bool highlighted = menu_cell_layer_is_highlighted(cell_layer);
+			GColor badge_color = highlighted ? GColorWhite : GColorBlack;
+			GColor letter_color = highlighted ? GColorBlack : GColorWhite;
+		#endif
+
+		const int16_t badge_size = 18;
+		GRect badge = GRect(6, cy - badge_size / 2, badge_size, badge_size);
+		graphics_context_set_fill_color(ctx, badge_color);
+		graphics_fill_rect(ctx, badge, 4, GCornersAll);
+
+		char letter[2] = { stop->type[0], '\0' };
+		graphics_context_set_text_color(ctx, letter_color);
+		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(badge.origin.x, badge.origin.y - 1, badge_size, badge_size), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+		text_x = 6 + badge_size + 8;
 	}
 
-	int16_t text_x = 36;
 	int16_t text_w = bounds.size.w - text_x - 4;
 
 	// The pinned stops list shows only the stop name (no distance), so it is
@@ -213,7 +228,7 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 void pins_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
-	lines_window_show(pinStops[cell_index->row].code, pinStops[cell_index->row].name);
+	lines_window_show(pinStops[cell_index->row].code, pinStops[cell_index->row].name, pinStops[cell_index->row].type);
 }
 
 void pins_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -285,9 +300,6 @@ static void pins_build_ui(Window *window)
 	setup_pins_menu_layer(window, window_layer);
 	setup_pins_loading_layer(window_layer);
 
-	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
-	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
-
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
@@ -315,14 +327,6 @@ static void pins_destroy_ui(void)
 	if (titleLayer) {
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
-	}
-	if (busIcon) {
-		gdraw_command_image_destroy(busIcon);
-		busIcon = NULL;
-	}
-	if (tramIcon) {
-		gdraw_command_image_destroy(tramIcon);
-		tramIcon = NULL;
 	}
 }
 

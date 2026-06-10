@@ -191,20 +191,37 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
 
-	// Small accent dot just before the stop title: blue for bus, red for tram.
-	// Color watches only; B&W watches keep the plain left-aligned title.
+	// Type badge on the left, vertically centered: a small rounded rectangle with a
+	// white letter inside (B for bus, T for tram). On color watches it is colored
+	// by type (blue for bus, red for tram) and stays colored even when selected,
+	// since the light-gray highlight keeps it legible. On B&W watches the black
+	// badge inverts to a white badge with a black letter on the solid-black
+	// selected row so it stays visible.
 	int16_t cy = bounds.size.h / 2;
 	int16_t text_x = 8;
-	#ifdef PBL_COLOR
-		if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-			GColor dot_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
-			graphics_context_set_fill_color(ctx, dot_color);
-			// Centered vertically on the title line, with the title nudged
-			// right to clear the dot.
-			graphics_fill_circle(ctx, GPoint(text_x + 4, cy - 10), 4);
-			text_x += 14;
-		}
-	#endif
+	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
+		#ifdef PBL_COLOR
+			GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+			GColor letter_color = GColorWhite;
+		#else
+			bool highlighted = menu_cell_layer_is_highlighted(cell_layer);
+			GColor badge_color = highlighted ? GColorWhite : GColorBlack;
+			GColor letter_color = highlighted ? GColorBlack : GColorWhite;
+		#endif
+
+		const int16_t badge_size = 18;
+		GRect badge = GRect(6, cy - badge_size / 2, badge_size, badge_size);
+		graphics_context_set_fill_color(ctx, badge_color);
+		graphics_fill_rect(ctx, badge, 4, GCornersAll);
+
+		// Pebble draws glyphs near the top of their box, so nudge the centered
+		// letter down to sit in the middle of the badge.
+		char letter[2] = { stop->type[0], '\0' };
+		graphics_context_set_text_color(ctx, letter_color);
+		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(badge.origin.x, badge.origin.y - 1, badge_size, badge_size), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+
+		text_x = 6 + badge_size + 8;
+	}
 
 	int16_t text_w = bounds.size.w - text_x - 4;
 
@@ -218,7 +235,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
-	lines_window_show(stops[cell_index->row].code, stops[cell_index->row].name);
+	lines_window_show(stops[cell_index->row].code, stops[cell_index->row].name, stops[cell_index->row].type);
 }
 
 // Long-pressing a stop opens an action menu to pin/unpin it.
@@ -248,6 +265,9 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 		.select_long_click = menu_long_select_callback,
 	});
 
+	// Color watches use the light-gray selection (black text/icons stay legible);
+	// B&W watches use the classic inverted black selection, where the row icons and
+	// text flip to white when highlighted.
 	menu_layer_set_highlight_colors(mainMenuLayer, COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
 	menu_layer_set_click_config_onto_window(mainMenuLayer, window);
 
