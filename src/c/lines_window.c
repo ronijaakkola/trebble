@@ -3,6 +3,7 @@
 #include "main_window.h"
 #include "error_window.h"
 #include "pins.h"
+#include "marquee.h"
 
 // The "Show later" paging UI is left out of aplite: its ~24KB heap is already
 // tight for the departures view (which is why this window frees its layers when
@@ -476,8 +477,10 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		}
 	#elif PBL_PLATFORM_EMERY
 		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
-		graphics_context_set_text_color(ctx, text_color);
-		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(4, 34, 150, 24), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+		// Scrolls the destination when this row is focused and it overflows. The
+		// dir line sits below the badge with nothing to its left, so the cell's own
+		// left edge clips the scrolled-off text (no gutter mask needed).
+		marquee_draw_label(ctx, cell_layer, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(4, 34, 150, 24), COLOR_FALLBACK(LINES_HL_COLOR, GColorBlack));
 		graphics_context_set_text_color(ctx, time_color);
 		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_24), GRect(135, 0, 62, 24), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 		if (show_mins) {
@@ -486,8 +489,10 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		}
 	#else
 		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
-		graphics_context_set_text_color(ctx, text_color);
-		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(4, 34, 136, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+		// Scrolls the destination when this row is focused and it overflows. The
+		// dir line sits below the badge with nothing to its left, so the cell's own
+		// left edge clips the scrolled-off text (no gutter mask needed).
+		marquee_draw_label(ctx, cell_layer, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(4, 34, 136, 20), COLOR_FALLBACK(LINES_HL_COLOR, GColorBlack));
 		graphics_context_set_text_color(ctx, time_color);
 		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(78, 0, 62, 21), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 		if (show_mins) {
@@ -557,6 +562,7 @@ void setup_lines_layer(Window *window, Layer *window_layer)
 		.draw_row = lines_draw_row_callback,
 		.select_click = lines_select_callback,
 		.select_long_click = lines_long_select_callback,
+		.selection_changed = marquee_selection_changed,
 	});
 
 	menu_layer_set_highlight_colors(lineMenuLayer, COLOR_FALLBACK(LINES_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -720,12 +726,16 @@ void lines_window_appear(Window *window)
 	// unsubscribe in the disappear handler stops covered/other screens (menu,
 	// pins, stop) from being periodically updated.
 	tick_timer_service_subscribe(MINUTE_UNIT, lines_minute_tick);
+
+	// Drive the scrolling destination names while this list is on screen.
+	marquee_attach(lineMenuLayer);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void lines_window_disappear(Window *window)
 {
+	marquee_detach(lineMenuLayer);
 	tick_timer_service_unsubscribe();
 #ifdef SHOW_LATER_ENABLED
 	// Cancel a pending "No later departures" restore so it cannot fire against the
@@ -745,6 +755,7 @@ void lines_window_disappear(Window *window)
 
 void lines_window_unload(Window *window)
 {
+	marquee_detach(lineMenuLayer);
 	lines_destroy_ui();
 
 	// The window underneath (stops or pinned stops) reclaims the AppMessage inbox in

@@ -4,6 +4,7 @@
 #include "main_window.h"   // struct StopInfo, NUM_STOPS
 #include "lines_window.h"
 #include "error_window.h"
+#include "marquee.h"
 
 static Window *pinsWindow;
 static MenuLayer *pinsMenuLayer;
@@ -187,15 +188,27 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	#else
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
+	GColor bg = COLOR_FALLBACK(PIN_HL_COLOR, GColorBlack);
 
-	// Type badge on the left, vertically centered, mirroring the nearby stops list:
-	// a small rounded rectangle with a white letter (B for bus, T for tram). On
-	// color watches it is colored by type and stays colored when selected; on B&W
-	// watches the black badge inverts to a white badge with a black letter on the
-	// solid-black selected row so it stays visible.
+	// The pinned stops list shows only the stop name (no distance), so it is
+	// vertically centered in the cell. The stops are still ordered nearest-first
+	// using the distance computed by the JS component.
 	int16_t cy = bounds.size.h / 2;
-	int16_t text_x = 8;
-	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
+	const int16_t badge_size = 18;
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	int16_t text_x = has_badge ? (6 + badge_size + 8) : 8;
+	int16_t text_w = bounds.size.w - text_x - 4;
+
+	// Scrolls when this row is focused and the name overflows; otherwise static
+	// with a trailing ellipsis.
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(text_x, cy - 13, text_w, 24), bg);
+
+	// Type badge on the left, mirroring the nearby stops list: a small rounded
+	// rectangle with a white letter (B for bus, T for tram). Drawn AFTER the name
+	// so the scrolling title slides under it. On color watches it is colored by
+	// type and stays colored when selected; on B&W watches the black badge inverts
+	// to a white badge with a black letter on the solid-black selected row.
+	if (has_badge) {
 		#ifdef PBL_COLOR
 			GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
 			GColor letter_color = GColorWhite;
@@ -205,7 +218,6 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 			GColor letter_color = highlighted ? GColorBlack : GColorWhite;
 		#endif
 
-		const int16_t badge_size = 18;
 		GRect badge = GRect(6, cy - badge_size / 2, badge_size, badge_size);
 		graphics_context_set_fill_color(ctx, badge_color);
 		graphics_fill_rect(ctx, badge, 4, GCornersAll);
@@ -213,17 +225,7 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		char letter[2] = { stop->type[0], '\0' };
 		graphics_context_set_text_color(ctx, letter_color);
 		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(badge.origin.x, badge.origin.y - 1, badge_size, badge_size), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-		text_x = 6 + badge_size + 8;
 	}
-
-	int16_t text_w = bounds.size.w - text_x - 4;
-
-	// The pinned stops list shows only the stop name (no distance), so it is
-	// vertically centered in the cell. The stops are still ordered nearest-first
-	// using the distance computed by the JS component.
-	graphics_context_set_text_color(ctx, text_color);
-	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 13, text_w, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
 void pins_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -254,6 +256,7 @@ void setup_pins_menu_layer(Window *window, Layer *window_layer)
 		.draw_row = pins_draw_row_callback,
 		.select_click = pins_select_callback,
 		.select_long_click = pins_long_select_callback,
+		.selection_changed = marquee_selection_changed,
 	});
 
 	menu_layer_set_highlight_colors(pinsMenuLayer, COLOR_FALLBACK(PIN_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -419,17 +422,22 @@ void pins_window_appear(Window *window)
 	if (pins_consume_changed()) {
 		pins_prune_removed();
 	}
+
+	// Drive the scrolling stop names while this list is on screen.
+	marquee_attach(pinsMenuLayer);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void pins_window_disappear(Window *window)
 {
+	marquee_detach(pinsMenuLayer);
 	pins_destroy_ui();
 }
 
 void pins_window_unload(Window *window)
 {
+	marquee_detach(pinsMenuLayer);
 	pins_destroy_ui();
 }
 

@@ -3,6 +3,7 @@
 #include "lines_window.h"
 #include "error_window.h"
 #include "pins.h"
+#include "marquee.h"
 
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
@@ -190,16 +191,28 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	#else
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
+	GColor bg = COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack);
 
 	// Type badge on the left, vertically centered: a small rounded rectangle with a
-	// white letter inside (B for bus, T for tram). On color watches it is colored
-	// by type (blue for bus, red for tram) and stays colored even when selected,
-	// since the light-gray highlight keeps it legible. On B&W watches the black
-	// badge inverts to a white badge with a black letter on the solid-black
-	// selected row so it stays visible.
+	// white letter (B for bus, T for tram). The badge is drawn AFTER the name (in
+	// the gutter the name is nudged right to clear) so the scrolling name slides
+	// under it. On color watches it is colored by type and stays colored when
+	// selected; on B&W watches the black badge inverts to a white badge with a
+	// black letter on the solid-black selected row so it stays visible.
 	int16_t cy = bounds.size.h / 2;
 	int16_t text_x = 8;
-	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
+	const int16_t badge_size = 18;
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	if (has_badge) {
+		text_x = 6 + badge_size + 8;
+	}
+
+	int16_t text_w = bounds.size.w - text_x - 4;
+
+	// Scrolls when this row is focused and the name overflows; otherwise static.
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(text_x, cy - 21, text_w, 22), bg);
+
+	if (has_badge) {
 		#ifdef PBL_COLOR
 			GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
 			GColor letter_color = GColorWhite;
@@ -209,7 +222,6 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 			GColor letter_color = highlighted ? GColorBlack : GColorWhite;
 		#endif
 
-		const int16_t badge_size = 18;
 		GRect badge = GRect(6, cy - badge_size / 2, badge_size, badge_size);
 		graphics_context_set_fill_color(ctx, badge_color);
 		graphics_fill_rect(ctx, badge, 4, GCornersAll);
@@ -219,17 +231,11 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 		char letter[2] = { stop->type[0], '\0' };
 		graphics_context_set_text_color(ctx, letter_color);
 		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(badge.origin.x, badge.origin.y - 1, badge_size, badge_size), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-		text_x = 6 + badge_size + 8;
 	}
-
-	int16_t text_w = bounds.size.w - text_x - 4;
-
-	graphics_context_set_text_color(ctx, text_color);
-	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 21, text_w, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 
 	char dist[12];
 	snprintf(dist, sizeof(dist), "%d m", stop->dist);
+	graphics_context_set_text_color(ctx, text_color);
 	graphics_draw_text(ctx, dist, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
@@ -263,6 +269,7 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 		.draw_row = menu_draw_row_callback,
 		.select_click = menu_select_callback,
 		.select_long_click = menu_long_select_callback,
+		.selection_changed = marquee_selection_changed,
 	});
 
 	// Color watches use the light-gray selection (black text/icons stay legible);
@@ -384,17 +391,22 @@ void main_window_appear(Window *window)
 	}
 
 	main_window_register_inbox();
+
+	// Drive the scrolling stop names while this list is on screen.
+	marquee_attach(mainMenuLayer);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void main_window_disappear(Window *window)
 {
+	marquee_detach(mainMenuLayer);
 	main_destroy_ui();
 }
 
 void main_window_unload(Window *window)
 {
+	marquee_detach(mainMenuLayer);
 	main_destroy_ui();
 }
 
