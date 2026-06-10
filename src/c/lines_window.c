@@ -31,8 +31,32 @@ static char stopType;
 // when the stop has no zone or none was reported. Cleared on each fresh load so
 // a stop without a zone does not inherit the previous stop's badge.
 static char stopZone[8];
+// The stop's public code (e.g. "H1224"), shown as a badge in the emery header.
+// Arrives as a stop-level message with the departures; cleared on each load so a
+// stop without a code does not inherit the previous one's. Only rendered on emery.
+static char stopShortCode[12];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
+
+#ifdef PBL_PLATFORM_EMERY
+// Mode icon (bus/tram line art) drawn white in the colored header tile. Loaded
+// with the window's other layers.
+static GDrawCommandImage *busIcon;
+static GDrawCommandImage *tramIcon;
+
+// Recolors every command in a PDC image, used to tint the line-art mode icon
+// white for the colored header tile. Mirrors home_window.c's helper.
+static void pdc_set_colors(GDrawCommandImage *image, GColor stroke, GColor fill)
+{
+	GDrawCommandList *list = gdraw_command_image_get_command_list(image);
+	uint32_t num = gdraw_command_list_get_num_commands(list);
+	for (uint32_t i = 0; i < num; ++i) {
+		GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
+		gdraw_command_set_stroke_color(cmd, stroke);
+		gdraw_command_set_fill_color(cmd, fill);
+	}
+}
+#endif
 
 // Remembers the highlighted row while the menu layer is freed (e.g. with the
 // action-menu or feedback window on top) so returning to the departures list
@@ -178,6 +202,12 @@ static void process_line_tuple(Tuple *t)
 		if (zoneLayer) {
 			layer_mark_dirty(zoneLayer);
 		}
+	}
+	else if (key == MESSAGE_KEY_stopShortCode) {
+		// Stop-level value sent ahead of the departures (like the zone); stored
+		// for the emery header badge. Not tied to a line.
+		strncpy(stopShortCode, t->value->cstring, sizeof(stopShortCode) - 1);
+		stopShortCode[sizeof(stopShortCode) - 1] = '\0';
 	}
 	else if (key == MESSAGE_KEY_lineMessage) {
 		return;
@@ -335,7 +365,7 @@ int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *
 		#if defined(PBL_ROUND)
 			return 86; // Extra room for the "X min" line under the time
 		#elif defined(PBL_PLATFORM_EMERY)
-			return 64;
+			return 48; // Single-line row: badge + destination, time/countdown at right
 		#else
 			return 60; // Tall enough to pad the badge and destination top/bottom
 		#endif
@@ -343,9 +373,17 @@ int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *
 	else return 44; //Default height of cell
 }
 
+// Emery's header is a taller colored bar carrying a mode-icon tile, the stop name
+// and the stop-code badge; the other platforms keep the compact title bar.
+#ifdef PBL_PLATFORM_EMERY
+#define LINES_HEADER_HEIGHT 36
+#else
+#define LINES_HEADER_HEIGHT MENU_CELL_BASIC_HEADER_HEIGHT
+#endif
+
 int16_t lines_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data)
 {
-	return MENU_CELL_BASIC_HEADER_HEIGHT;
+	return LINES_HEADER_HEIGHT;
 }
 
 void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t section_index, void *data)
@@ -356,6 +394,66 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 
 	GRect bounds = layer_get_bounds(cell_layer);
 	GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+
+#ifdef PBL_PLATFORM_EMERY
+	// Emery gets a richer header: a colored bar (blue bus / red tram) with a white
+	// mode icon, the stop name and the public stop-code badge. An unknown mode
+	// keeps a plain white bar with black text, as the color carries no meaning.
+	// One row: mode icon, stop name, and the stop-code badge aligned to the right
+	// edge, all vertically centered in the bar. An unknown mode keeps a plain white
+	// bar with black text.
+	bool colored = (stopType == 'B' || stopType == 'T');
+	GColor fg = colored ? GColorWhite : GColorBlack;
+	GColor bar = colored ? (stopType == 'B' ? GColorCobaltBlue : GColorRed) : GColorWhite;
+	graphics_context_set_fill_color(ctx, bar);
+	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+	// Icon geometry, resolved up front so the name's left edge clears it. The icon
+	// itself is drawn after the name so the scrolling name slides under it.
+	int16_t hx = 5;
+	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : NULL;
+	GSize hs = GSize(0, 0);
+	if (hicon) {
+		hs = gdraw_command_image_get_bounds_size(hicon);
+		hx = 5 + hs.w + 6;
+	}
+
+	// Badge geometry, resolved up front for the same reason. The name fills the
+	// space between the icon and the badge (or the right margin when there is no
+	// code).
+	bool has_code = stopShortCode[0] != '\0';
+	GFont badge_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+	int16_t bw = 0, bx = 0, bh = 18, by = (bounds.size.h - 18) / 2;
+	int16_t name_right = bounds.size.w - 5;
+	if (has_code) {
+		GSize ct = graphics_text_layout_get_content_size(stopShortCode, badge_font, GRect(0, 0, 90, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+		bw = ct.w + 10;
+		bx = bounds.size.w - bw - 5;
+		name_right = bx - 6;
+	}
+
+	// Stop name, auto-scrolling since the header cannot be focused. Both gutters
+	// are masked with the bar color so the scrolled text vanishes before the icon
+	// and the badge, which are painted over those gutters next.
+	marquee_draw_auto_label(ctx, (char *)stopName, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), fg, GRect(hx, 6, name_right - hx, 24), bar, 0, bounds.size.w);
+
+	if (hicon) {
+		// The icon keeps its default look (black lines, white interior) on the bar.
+		pdc_set_colors(hicon, GColorBlack, GColorWhite);
+		gdraw_command_image_draw(ctx, hicon, GPoint(5, (bounds.size.h - hs.h) / 2));
+	}
+	if (has_code) {
+		GRect badge = GRect(bx, by, bw, bh);
+		// Thin outlined pill in the foreground color so it reads on either bar
+		// color. Stroke width is pinned to 1 so the border stays hairline.
+		graphics_context_set_stroke_width(ctx, 1);
+		graphics_context_set_stroke_color(ctx, fg);
+		graphics_draw_round_rect(ctx, badge, 3);
+		graphics_context_set_text_color(ctx, fg);
+		graphics_draw_text(ctx, stopShortCode, badge_font, GRect(bx + 5, by, bw, bh + 4), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+	}
+	return;
+#endif
 
 	// On color watches a known type tints the title bar (blue for bus, red for
 	// tram) with the stop name in white. B&W watches keep a plain white header with
@@ -492,16 +590,49 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(0, 70, 180, 16), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 		}
 	#elif PBL_PLATFORM_EMERY
-		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
-		// Scrolls the destination when this row is focused and it overflows. The
-		// dir line sits below the badge with nothing to its left, so the cell's own
-		// left edge clips the scrolled-off text (no gutter mask needed).
-		marquee_draw_label(ctx, cell_layer, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(4, 34, 150, 24), COLOR_FALLBACK(LINES_HL_COLOR, GColorBlack));
+		// One line: code badge, then destination, with the time stacked over the
+		// "x min" countdown at the right edge. Everything is vertically centered.
+		// 7px side padding keeps the content off the cell edges.
+		{
+		GRect bounds = layer_get_bounds(cell_layer);
+		bool hl = menu_cell_layer_is_highlighted(cell_layer);
+		GColor row_bg = hl ? GColorLightGray : GColorWhite;
+		int16_t mid = bounds.size.h / 2;
+
+		GFont code_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+		GSize code_sz = graphics_text_layout_get_content_size(line->code, code_font, GRect(0, 0, 90, 40), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+		int16_t badge_h = code_sz.h + 2;
+		int16_t dir_x = 7 + (code_sz.w + 12) + 6;   // badge (12 = inner padding), 6px gap
+
+		// Reserve only the time's actual width on the right (an "HH:MM" time is wider
+		// than the "x min" countdown below it), leaving the destination the rest of
+		// the row instead of a fixed, over-wide column.
+		GFont time_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+		GSize time_sz = graphics_text_layout_get_content_size(line->time, time_font, GRect(0, 0, 90, 40), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+		int16_t time_right = bounds.size.w - 7;
+		int16_t dir_right = time_right - time_sz.w - 6;   // 6px gap before the time
+
+		// Destination first, so the badge and the time column paint over any
+		// scrolled-off text. It scrolls when this row is focused and overflows.
+		marquee_draw_label(ctx, cell_layer, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(dir_x, mid - 12, dir_right - dir_x, 24), row_bg);
+
+		// Code badge, vertically centered, over the destination's left gutter.
+		draw_code_badge(ctx, line->code, line->type, 7, (bounds.size.h - badge_h) / 2, code_font, hl);
+
+		// Mask any scrolled destination tail out of the time column (marquee only
+		// masks its left side), then draw the time over the "x min" countdown, both
+		// right-aligned at the edge.
+		graphics_context_set_fill_color(ctx, row_bg);
+		graphics_fill_rect(ctx, GRect(dir_right, 0, bounds.size.w - dir_right, bounds.size.h), 0, GCornerNone);
+		int16_t tw = time_right - dir_right;
 		graphics_context_set_text_color(ctx, time_color);
-		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_24), GRect(135, 0, 62, 24), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 		if (show_mins) {
+			graphics_draw_text(ctx, line->time, time_font, GRect(dir_right, mid - 20, tw, 21), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 			graphics_context_set_text_color(ctx, text_color);
-			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(135, 28, 62, 20), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(dir_right, mid + 2, tw, 16), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		} else {
+			graphics_draw_text(ctx, line->time, time_font, GRect(dir_right, mid - 11, tw, 22), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
+		}
 		}
 	#else
 		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
@@ -606,7 +737,9 @@ void setup_lines_loading_layer(Layer *window_layer)
 		title_fg = GColorWhite;
 	}
 #endif
-	titleLayer = text_layer_create(GRect(0, top, bounds.size.w, MENU_CELL_BASIC_HEADER_HEIGHT));
+	// Match the populated header height (taller on emery) so the colored bar does
+	// not change size when the departures land.
+	titleLayer = text_layer_create(GRect(0, top, bounds.size.w, LINES_HEADER_HEIGHT));
 	text_layer_set_background_color(titleLayer, title_bg);
 	text_layer_set_text_color(titleLayer, title_fg);
 	text_layer_set_font(titleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
@@ -665,6 +798,11 @@ static void lines_build_ui(Window *window)
 	setup_lines_layer(window, window_layer);
 	setup_lines_loading_layer(window_layer);
 
+#ifdef PBL_PLATFORM_EMERY
+	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
+	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+#endif
+
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
@@ -705,6 +843,16 @@ static void lines_destroy_ui(void)
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
 	}
+#ifdef PBL_PLATFORM_EMERY
+	if (busIcon) {
+		gdraw_command_image_destroy(busIcon);
+		busIcon = NULL;
+	}
+	if (tramIcon) {
+		gdraw_command_image_destroy(tramIcon);
+		tramIcon = NULL;
+	}
+#endif
 }
 
 // Requests a window of the selected stop's departing lines from the JS component.
@@ -752,9 +900,10 @@ void lines_window_load(Window *window)
 	// Clear any departures left over from a previous visit so the (reused) menu
 	// does not render stale rows (and its header) behind the loading overlay.
 	lineAmount = 0;
-	// Drop any zone from a previously viewed stop; this stop's zone arrives with
-	// its departures, and an absent zone should show no badge.
+	// Drop any zone/code from a previously viewed stop; this stop's values arrive
+	// with its departures, and an absent one should show no badge.
 	stopZone[0] = '\0';
+	stopShortCode[0] = '\0';
 	lines_build_ui(window);
 	lines_set_loading(true);
 
