@@ -11,6 +11,26 @@ static StatusBarLayer *statusLayer;
 static TextLayer *loadingLayer;
 static TextLayer *titleLayer;
 
+#ifdef PBL_PLATFORM_EMERY
+// Mode icons (bus/tram line art) drawn at the left of each row on emery, tinted
+// per row to the mode color. Loaded with the window's other layers.
+static GDrawCommandImage *busIcon;
+static GDrawCommandImage *tramIcon;
+
+// Recolors every command in a PDC image, used to tint the line-art mode icons to
+// the mode color before drawing. Mirrors home_window.c's helper.
+static void pdc_set_colors(GDrawCommandImage *image, GColor stroke, GColor fill)
+{
+	GDrawCommandList *list = gdraw_command_image_get_command_list(image);
+	uint32_t num = gdraw_command_list_get_num_commands(list);
+	for (uint32_t i = 0; i < num; ++i) {
+		GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
+		gdraw_command_set_stroke_color(cmd, stroke);
+		gdraw_command_set_fill_color(cmd, fill);
+	}
+}
+#endif
+
 static int stopAmount = 0;
 static struct StopInfo stops[NUM_STOPS];
 static bool stop_transfer_started;
@@ -174,7 +194,13 @@ void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t 
 
 int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef PBL_PLATFORM_EMERY
+	// Emery rows stack the name over a meta line (stop-code badge + distance), so
+	// they need more height than the single-line layout on the other platforms.
+	return 56;
+#else
 	return 48; // A bit taller than the Pencil design's 46 for breathing room
+#endif
 }
 
 void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data)
@@ -185,6 +211,41 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 	struct StopInfo *stop = &stops[cell_index->row];
 	GRect bounds = layer_get_bounds(cell_layer);
+
+#ifdef PBL_PLATFORM_EMERY
+	{
+	// Emery's larger screen gets a richer row: a mode icon on the left, the stop
+	// name on top, and the distance below it.
+	GColor name_color = GColorBlack;
+	GColor row_bg = MENU_HL_COLOR;
+
+	// Mode icon in its default look (black lines, white interior). Falls back to
+	// no icon (text flush left) for unknown modes.
+	int16_t icon_left = 8;
+	int16_t text_x = icon_left;
+	GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon
+		: stop->type[0] == 'T' ? tramIcon : NULL;
+	if (icon) {
+		pdc_set_colors(icon, GColorBlack, GColorWhite);
+		GSize isize = gdraw_command_image_get_bounds_size(icon);
+		gdraw_command_image_draw(ctx, icon, GPoint(icon_left, (bounds.size.h - isize.h) / 2));
+		text_x = icon_left + isize.w + 8;
+	}
+
+	int16_t text_w = bounds.size.w - text_x - 4;
+
+	// Name on the upper half (scrolls when focused and overflowing), distance
+	// below it. The two together are vertically centered in the row.
+	int16_t cy = bounds.size.h / 2;
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), name_color, GRect(text_x, cy - 21, text_w, 22), row_bg);
+
+	char dist_e[12];
+	snprintf(dist_e, sizeof(dist_e), "%d m", stop->dist);
+	graphics_context_set_text_color(ctx, GColorDarkGray);
+	graphics_draw_text(ctx, dist_e, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy + 2, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+	return;
+	}
+#endif
 
 	#ifdef PBL_COLOR
 		GColor text_color = GColorBlack;
@@ -321,6 +382,11 @@ static void main_build_ui(Window *window)
 	setup_menu_layer(window, window_layer);
 	setup_loading_layer(window_layer);
 
+#ifdef PBL_PLATFORM_EMERY
+	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
+	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+#endif
+
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
@@ -349,6 +415,16 @@ static void main_destroy_ui(void)
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
 	}
+#ifdef PBL_PLATFORM_EMERY
+	if (busIcon) {
+		gdraw_command_image_destroy(busIcon);
+		busIcon = NULL;
+	}
+	if (tramIcon) {
+		gdraw_command_image_destroy(tramIcon);
+		tramIcon = NULL;
+	}
+#endif
 }
 
 void main_window_load(Window *window)
