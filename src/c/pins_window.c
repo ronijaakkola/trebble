@@ -4,6 +4,7 @@
 #include "main_window.h"   // struct StopInfo, NUM_STOPS
 #include "lines_window.h"
 #include "error_window.h"
+#include "marquee.h"
 
 static Window *pinsWindow;
 static MenuLayer *pinsMenuLayer;
@@ -189,10 +190,20 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	#else
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
+	GColor bg = COLOR_FALLBACK(PIN_HL_COLOR, GColorBlack);
+
+	int16_t cy = bounds.size.h / 2;
+	int16_t text_x = 36;
+	int16_t text_w = bounds.size.w - text_x - 4;
+
+	// The pinned stops list shows only the stop name (no distance), so it is
+	// vertically centered in the cell. The stops are still ordered nearest-first
+	// using the distance computed by the JS component. Scrolls when this row is
+	// focused and the name overflows; otherwise static with a trailing ellipsis.
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(text_x, cy - 13, text_w, 24), bg);
 
 	// Bus/tram glyph on the left, vertically centered, mirroring the nearby stops
-	// list. (Tinting the glyph blue/red is handled separately later.)
-	int16_t cy = bounds.size.h / 2;
+	// list. Drawn after the name so the scrolling title slides under it.
 	if (stop->type[0] == 'B' || stop->type[0] == 'T') {
 		GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon : tramIcon;
 		if (icon) {
@@ -200,15 +211,6 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 			gdraw_command_image_draw(ctx, icon, GPoint(16 - icon_size.w / 2, cy - icon_size.h / 2));
 		}
 	}
-
-	int16_t text_x = 36;
-	int16_t text_w = bounds.size.w - text_x - 4;
-
-	// The pinned stops list shows only the stop name (no distance), so it is
-	// vertically centered in the cell. The stops are still ordered nearest-first
-	// using the distance computed by the JS component.
-	graphics_context_set_text_color(ctx, text_color);
-	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 13, text_w, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
 void pins_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -239,6 +241,7 @@ void setup_pins_menu_layer(Window *window, Layer *window_layer)
 		.draw_row = pins_draw_row_callback,
 		.select_click = pins_select_callback,
 		.select_long_click = pins_long_select_callback,
+		.selection_changed = marquee_selection_changed,
 	});
 
 	menu_layer_set_highlight_colors(pinsMenuLayer, COLOR_FALLBACK(PIN_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -415,17 +418,22 @@ void pins_window_appear(Window *window)
 	if (pins_consume_changed()) {
 		pins_prune_removed();
 	}
+
+	// Drive the scrolling stop names while this list is on screen.
+	marquee_attach(pinsMenuLayer);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void pins_window_disappear(Window *window)
 {
+	marquee_detach(pinsMenuLayer);
 	pins_destroy_ui();
 }
 
 void pins_window_unload(Window *window)
 {
+	marquee_detach(pinsMenuLayer);
 	pins_destroy_ui();
 }
 
