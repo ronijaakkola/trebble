@@ -178,10 +178,12 @@ function getDepartingLines(stopCode, mode) {
             return;
           }
 
-          // The fare zone is a stop-level property, shown as a badge on the
-          // departures screen. Sent ahead of the departures list (in the same
-          // ordered transfer) so the watch can store it before the rows arrive.
+          // The fare zone and public stop code are stop-level properties, shown
+          // on the departures screen. Sent ahead of the departures list (in the
+          // same ordered transfer) so the watch can store them before the rows
+          // arrive.
           var zone = stop.zoneId || "";
+          var shortCode = stop.code || "";
 
           var departures = stoptimes.slice(0, lineLimit);
 
@@ -211,7 +213,7 @@ function getDepartingLines(stopCode, mode) {
             };
           });
 
-          sendList([{ stopZone: zone }].concat(lines));
+          sendList([{ stopZone: zone, stopShortCode: shortCode }].concat(lines));
         } else {
           console.log("JS: No valid line data in the GraphQL response.");
           Pebble.sendAppMessage(emptyMessage);

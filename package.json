@@ -9,6 +9,7 @@
         "messageKeys": [
             "stopMessage",
             "stopCode",
+            "stopShortCode",
             "stopName",
             "stopDist",
             "stopMode",

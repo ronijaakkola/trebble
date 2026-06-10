@@ -26,6 +26,7 @@ function createDeparturesQuery(stopCode, startTime, numberOfDepartures) {
 {
   stop(id: "${stopCode}") {
     name
+    code
     zoneId
     stoptimesWithoutPatterns(omitNonPickups: true, numberOfDepartures: ${numberOfDepartures}${startArg}, timeRange: 604800) {
       scheduledDeparture
