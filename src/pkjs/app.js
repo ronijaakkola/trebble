@@ -178,6 +178,11 @@ function getDepartingLines(stopCode, mode) {
             return;
           }
 
+          // The fare zone is a stop-level property, shown as a badge on the
+          // departures screen. Sent ahead of the departures list (in the same
+          // ordered transfer) so the watch can store it before the rows arrive.
+          var zone = stop.zoneId || "";
+
           var departures = stoptimes.slice(0, lineLimit);
 
           // Remember where the next "Show later" window should begin: just after
@@ -206,7 +211,7 @@ function getDepartingLines(stopCode, mode) {
             };
           });
 
-          sendList(lines);
+          sendList([{ stopZone: zone }].concat(lines));
         } else {
           console.log("JS: No valid line data in the GraphQL response.");
           Pebble.sendAppMessage(emptyMessage);

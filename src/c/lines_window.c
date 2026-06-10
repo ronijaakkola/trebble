@@ -16,6 +16,9 @@
 static Window *linesWindow;
 static MenuLayer *lineMenuLayer;
 static StatusBarLayer *statusLayer;
+// Draws the fare-zone badge over the top-right corner of the status bar. Sits
+// above statusLayer so the circle covers the bar rather than being painted over.
+static Layer *zoneLayer;
 static TextLayer *loadingLayer;
 static TextLayer *titleLayer;
 
@@ -24,6 +27,10 @@ char stopName[30];
 // The stop's vehicle mode ('B', 'T' or '\0' unknown), used to color the header
 // bar and its type badge, and to tag a pin created from this screen.
 static char stopType;
+// The stop's fare zone (e.g. "A"), shown as a badge on the status bar. Empty
+// when the stop has no zone or none was reported. Cleared on each fresh load so
+// a stop without a zone does not inherit the previous stop's badge.
+static char stopZone[8];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
@@ -162,6 +169,15 @@ static void process_line_tuple(Tuple *t)
 	else if (key == MESSAGE_KEY_lineMins) {
 		// Optional field, so it does not gate completion of a line.
 		lines[line_index].mins = t->value->int32;
+	}
+	else if (key == MESSAGE_KEY_stopZone) {
+		// Stop-level value sent ahead of the departures; store it and repaint the
+		// badge. Not tied to a line, so it does not touch lines[line_index].
+		strncpy(stopZone, t->value->cstring, sizeof(stopZone) - 1);
+		stopZone[sizeof(stopZone) - 1] = '\0';
+		if (zoneLayer) {
+			layer_mark_dirty(zoneLayer);
+		}
 	}
 	else if (key == MESSAGE_KEY_lineMessage) {
 		return;
@@ -608,6 +624,34 @@ void setup_lines_loading_layer(Layer *window_layer)
 	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
 }
 
+// Draws the fare-zone badge (a small filled circle with the zone letter) in the
+// top-right corner of the status bar. On color watches the circle is blue, on
+// black-and-white watches it is black; the letter is always white. Nothing is
+// drawn when the stop has no zone.
+static void zone_update_proc(Layer *layer, GContext *ctx)
+{
+	if (stopZone[0] == '\0') {
+		return;
+	}
+
+	GRect bounds = layer_get_bounds(layer);
+	const int16_t r = 5;       // badge radius
+	const int16_t margin = 4;  // gap from the right edge to the circle
+	int16_t cx = bounds.size.w - margin - r;
+	// Nudge the center up a pixel so the circle clears the dotted separator drawn
+	// at the bottom of the status bar.
+	int16_t cy = bounds.size.h / 2 - 1;
+
+	graphics_context_set_fill_color(ctx, COLOR_FALLBACK(GColorCobaltBlue, GColorBlack));
+	graphics_fill_circle(ctx, GPoint(cx, cy), r);
+
+	graphics_context_set_text_color(ctx, GColorWhite);
+	// Pebble draws a glyph near the top of its box with descender space below, so
+	// nudge the letter up to sit centered in the circle.
+	graphics_draw_text(ctx, stopZone, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+		GRect(cx - r, cy - r - 4, 2 * r + 1, 2 * r + 5), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+}
+
 // Builds the window's layers (menu + loading overlay + status bar). Split out so
 // it can run both on initial load and when the window is revealed again after
 // being covered (see lines_window_appear/disappear). No-op if already built.
@@ -625,6 +669,14 @@ static void lines_build_ui(Window *window)
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
 	layer_add_child(window_layer, status_bar_layer_get_layer(statusLayer));
+
+	// The zone badge sits on top of the status bar, spanning its width so the badge
+	// can be right-aligned within it.
+	GRect status_bounds = layer_get_bounds(window_layer);
+	status_bounds.size.h = STATUS_BAR_LAYER_HEIGHT;
+	zoneLayer = layer_create(status_bounds);
+	layer_set_update_proc(zoneLayer, zone_update_proc);
+	layer_add_child(window_layer, zoneLayer);
 }
 
 // Frees the window's layers. The departures themselves live in `lines`, so the
@@ -636,6 +688,10 @@ static void lines_destroy_ui(void)
 		savedSelectedRow = menu_layer_get_selected_index(lineMenuLayer).row;
 		menu_layer_destroy(lineMenuLayer);
 		lineMenuLayer = NULL;
+	}
+	if (zoneLayer) {
+		layer_destroy(zoneLayer);
+		zoneLayer = NULL;
 	}
 	if (statusLayer) {
 		status_bar_layer_destroy(statusLayer);
@@ -696,6 +752,9 @@ void lines_window_load(Window *window)
 	// Clear any departures left over from a previous visit so the (reused) menu
 	// does not render stale rows (and its header) behind the loading overlay.
 	lineAmount = 0;
+	// Drop any zone from a previously viewed stop; this stop's zone arrives with
+	// its departures, and an absent zone should show no badge.
+	stopZone[0] = '\0';
 	lines_build_ui(window);
 	lines_set_loading(true);
 

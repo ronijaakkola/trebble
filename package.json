@@ -12,6 +12,7 @@
             "stopName",
             "stopDist",
             "stopMode",
+            "stopZone",
             "messageEnd",
             "stopNoFound",
             "lineMessage",
