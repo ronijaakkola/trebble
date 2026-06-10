@@ -34,3 +34,15 @@ void marquee_selection_changed(MenuLayer *menu, MenuIndex new_index, MenuIndex o
 // caller should draw any icon/dot in that gutter AFTER this call.
 void marquee_draw_label(GContext *ctx, const Layer *cell_layer, const char *text,
                         GFont font, GColor text_color, GRect frame, GColor bg);
+
+// Draws an always-scrolling single-line label inside `frame` — for elements that
+// cannot be focused, such as a window header. When `text` overflows `frame` it
+// scrolls automatically; otherwise it is drawn static with a trailing ellipsis.
+// Both gutters are masked with `bg` (from `mask_left` to the frame's left edge,
+// and from the frame's right edge to `mask_right`) so the scrolled text vanishes
+// before whatever the caller draws there (e.g. an icon and a badge) afterward.
+// This is an independent scroll channel from marquee_draw_label, driven by the
+// same shared timer, so a header and the focused row can scroll at once.
+void marquee_draw_auto_label(GContext *ctx, const char *text, GFont font,
+                             GColor text_color, GRect frame, GColor bg,
+                             int16_t mask_left, int16_t mask_right);

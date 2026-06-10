@@ -7,7 +7,10 @@
 #define STEP_PX      2
 #define PAUSE_TICKS  29  // ~1450 ms at TICK_MS
 
-enum { MQ_PHASE_START, MQ_PHASE_SCROLL, MQ_PHASE_END };
+// START/END are the pauses at each extreme; SCROLL advances toward the tail.
+// BACK is only used by ping-pong channels, scrolling smoothly back to the start
+// instead of snapping there.
+enum { MQ_PHASE_START, MQ_PHASE_SCROLL, MQ_PHASE_END, MQ_PHASE_BACK };
 
 static MenuLayer *s_menu;
 static AppTimer  *s_timer;
@@ -16,6 +19,14 @@ static int16_t    s_max_offset;   // px the focused label overflows its frame
 static int        s_phase;
 static int        s_phase_ticks;
 static bool       s_measured;     // has the focused label reported its overflow yet?
+
+// Second, always-on channel for a label that cannot be focused (a window header).
+// It shares the timer with the focused-row channel above but animates on its own.
+static int16_t    s_hdr_offset;
+static int16_t    s_hdr_max_offset;
+static int        s_hdr_phase;
+static int        s_hdr_phase_ticks;
+static bool       s_hdr_measured;
 
 static void timer_cb(void *data);
 
@@ -27,7 +38,8 @@ static void ensure_timer(void)
 }
 
 // Reset the cycle to "paused at the start", overflow not yet known. The next
-// render of the focused row reports the overflow via marquee_draw_label().
+// render of the focused row reports the overflow via marquee_draw_label() (and
+// the header via marquee_draw_auto_label()).
 static void reset_state(void)
 {
 	s_offset = 0;
@@ -35,6 +47,61 @@ static void reset_state(void)
 	s_phase = MQ_PHASE_START;
 	s_phase_ticks = 0;
 	s_measured = false;
+
+	s_hdr_offset = 0;
+	s_hdr_max_offset = 0;
+	s_hdr_phase = MQ_PHASE_START;
+	s_hdr_phase_ticks = 0;
+	s_hdr_measured = false;
+}
+
+// Advances one scroll channel by a tick. When `pingpong` is false the cycle is
+// start pause -> scroll to tail -> end pause -> snap back -> loop. When true the
+// end pause is followed by a smooth scroll back to the start (start pause ->
+// scroll -> end pause -> scroll back -> loop). Returns true if the channel has
+// something to animate, so the timer should keep running.
+static bool advance_channel(int16_t *offset, int16_t max_offset, int *phase, int *phase_ticks, bool pingpong)
+{
+	if (max_offset <= 0) {
+		return false;
+	}
+	switch (*phase) {
+		case MQ_PHASE_START:
+			if (++(*phase_ticks) >= PAUSE_TICKS) {
+				*phase = MQ_PHASE_SCROLL;
+				*phase_ticks = 0;
+			}
+			break;
+		case MQ_PHASE_SCROLL:
+			*offset += STEP_PX;
+			if (*offset >= max_offset) {
+				*offset = max_offset;
+				*phase = MQ_PHASE_END;
+				*phase_ticks = 0;
+			}
+			break;
+		case MQ_PHASE_END:
+			if (++(*phase_ticks) >= PAUSE_TICKS) {
+				*phase_ticks = 0;
+				if (pingpong) {
+					// Scroll smoothly back to the start rather than snapping.
+					*phase = MQ_PHASE_BACK;
+				} else {
+					*offset = 0;
+					*phase = MQ_PHASE_START;
+				}
+			}
+			break;
+		case MQ_PHASE_BACK:
+			*offset -= STEP_PX;
+			if (*offset <= 0) {
+				*offset = 0;
+				*phase = MQ_PHASE_START;
+				*phase_ticks = 0;
+			}
+			break;
+	}
+	return true;
 }
 
 static void timer_cb(void *data)
@@ -44,45 +111,24 @@ static void timer_cb(void *data)
 		return;
 	}
 
-	// Wait until the focused row has drawn once and reported its overflow. The
-	// menu repaints on attach/selection-change before this first tick fires, so
-	// a long label is already measured by now; if the focused row has no marquee
-	// label (e.g. the "Show later" action), it never reports, so we simply idle
-	// here rather than busy-repainting.
-	if (!s_measured) {
-		return;
+	// Advance whichever channels have reported an overflowing label. A channel
+	// only reports once it has drawn (the focused row via marquee_draw_label, the
+	// header via marquee_draw_auto_label); until then it idles instead of
+	// busy-repainting. The timer keeps running while either channel is animating.
+	bool active = false;
+	if (s_measured) {
+		active |= advance_channel(&s_offset, s_max_offset, &s_phase, &s_phase_ticks, false);
 	}
-	if (s_max_offset <= 0) {
-		// Focused label fits — nothing to animate until the next selection change.
-		return;
-	}
-
-	switch (s_phase) {
-		case MQ_PHASE_START:
-			if (++s_phase_ticks >= PAUSE_TICKS) {
-				s_phase = MQ_PHASE_SCROLL;
-				s_phase_ticks = 0;
-			}
-			break;
-		case MQ_PHASE_SCROLL:
-			s_offset += STEP_PX;
-			if (s_offset >= s_max_offset) {
-				s_offset = s_max_offset;
-				s_phase = MQ_PHASE_END;
-				s_phase_ticks = 0;
-			}
-			break;
-		case MQ_PHASE_END:
-			if (++s_phase_ticks >= PAUSE_TICKS) {
-				s_offset = 0;
-				s_phase = MQ_PHASE_START;
-				s_phase_ticks = 0;
-			}
-			break;
+	if (s_hdr_measured) {
+		// The header scrolls back and forth, since it has no resting "focused" state
+		// to snap back to.
+		active |= advance_channel(&s_hdr_offset, s_hdr_max_offset, &s_hdr_phase, &s_hdr_phase_ticks, true);
 	}
 
-	layer_mark_dirty(menu_layer_get_layer(s_menu));
-	ensure_timer();
+	if (active) {
+		layer_mark_dirty(menu_layer_get_layer(s_menu));
+		ensure_timer();
+	}
 }
 
 // Records the focused label's overflow and returns the offset to draw it at.
@@ -98,6 +144,21 @@ static int16_t offset_for(int16_t overflow_px)
 		ensure_timer();
 	}
 	return s_offset;
+}
+
+// Header-channel counterpart of offset_for(): records the header label's overflow
+// and returns the offset to draw it at.
+static int16_t offset_for_header(int16_t overflow_px)
+{
+	s_hdr_measured = true;
+	s_hdr_max_offset = overflow_px > 0 ? overflow_px : 0;
+	if (s_hdr_offset > s_hdr_max_offset) {
+		s_hdr_offset = s_hdr_max_offset;
+	}
+	if (s_hdr_max_offset > 0) {
+		ensure_timer();
+	}
+	return s_hdr_offset;
 }
 
 void marquee_attach(MenuLayer *menu)
@@ -155,6 +216,46 @@ void marquee_draw_label(GContext *ctx, const Layer *cell_layer, const char *text
 			}
 			return;
 		}
+	}
+
+	graphics_draw_text(ctx, text, font, frame,
+		GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+}
+
+void marquee_draw_auto_label(GContext *ctx, const char *text, GFont font,
+                             GColor text_color, GRect frame, GColor bg,
+                             int16_t mask_left, int16_t mask_right)
+{
+	graphics_context_set_text_color(ctx, text_color);
+
+	// Measure the natural single-line width with a generously wide box so the text
+	// never wraps, then compare against the available frame width.
+	GSize full = graphics_text_layout_get_content_size(
+		text, font, GRect(0, 0, 2000, frame.size.h + 4),
+		GTextOverflowModeWordWrap, GTextAlignmentLeft);
+	int16_t overflow = full.w - frame.size.w;
+	int16_t ox = offset_for_header(overflow);
+
+	if (overflow > 0) {
+		// Draw the full text shifted left by the current offset, then mask both
+		// gutters (no clip-box API exists) so only the part inside `frame` shows.
+		graphics_draw_text(ctx, text, font,
+			GRect(frame.origin.x - ox, frame.origin.y, full.w + 8, frame.size.h),
+			GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+
+		graphics_context_set_fill_color(ctx, bg);
+		if (frame.origin.x > mask_left) {
+			graphics_fill_rect(ctx,
+				GRect(mask_left, frame.origin.y, frame.origin.x - mask_left, frame.size.h),
+				0, GCornerNone);
+		}
+		int16_t right_edge = frame.origin.x + frame.size.w;
+		if (mask_right > right_edge) {
+			graphics_fill_rect(ctx,
+				GRect(right_edge, frame.origin.y, mask_right - right_edge, frame.size.h),
+				0, GCornerNone);
+		}
+		return;
 	}
 
 	graphics_draw_text(ctx, text, font, frame,
