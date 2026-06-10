@@ -21,6 +21,9 @@ static TextLayer *titleLayer;
 
 static char stopCode[20];
 char stopName[30];
+// The stop's vehicle mode ('B', 'T' or '\0' unknown), used to color the header
+// bar and its type badge, and to tag a pin created from this screen.
+static char stopType;
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
@@ -58,10 +61,11 @@ static bool line_got_time;
 static bool line_got_dir;
 static int line_index;
 
-void lines_window_show(char *code, char *name)
+void lines_window_show(char *code, char *name, char *type)
 {
 	strncpy(stopCode, code, sizeof(stopCode));
 	strncpy(stopName, name, sizeof(stopName));
+	stopType = type[0];
 	window_stack_push(lines_window_get_window(), true);
 }
 
@@ -333,11 +337,24 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	if (section_index != 0) {
 		return;
 	}
-	// Centered header, matching the centered title shown during loading so the
-	// title does not shift when the list appears.
+
 	GRect bounds = layer_get_bounds(cell_layer);
-	graphics_context_set_text_color(ctx, GColorBlack);
-	graphics_draw_text(ctx, (char *)stopName, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+	GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+
+	// On color watches a known type tints the title bar (blue for bus, red for
+	// tram) with the stop name in white. B&W watches keep a plain white header with
+	// black text, since the color carries no meaning there.
+	GColor text_color = GColorBlack;
+#ifdef PBL_COLOR
+	if (stopType == 'B' || stopType == 'T') {
+		graphics_context_set_fill_color(ctx, stopType == 'B' ? GColorCobaltBlue : GColorRed);
+		graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+		text_color = GColorWhite;
+	}
+#endif
+
+	graphics_context_set_text_color(ctx, text_color);
+	graphics_draw_text(ctx, (char *)stopName, font, bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
 // Picks the badge background color for a line type. On color watches buses are
@@ -363,17 +380,31 @@ static int16_t code_badge_width(GContext *ctx, const char *code, GFont font)
 }
 #endif
 
-// Draws the line code inside a rounded, type-colored badge at (x, y).
-static void draw_code_badge(GContext *ctx, const char *code, const char *type, int16_t x, int16_t y, GFont font)
+// Draws the line code inside a rounded, type-colored badge at (x, y). On color
+// watches the badge keeps its type color even when focused, since the light-gray
+// selection leaves it legible. On B&W watches the badge is black, so on the
+// solid-black focused row it inverts to a white pill with the line code in black
+// to stay visible.
+static void draw_code_badge(GContext *ctx, const char *code, const char *type, int16_t x, int16_t y, GFont font, bool highlighted)
 {
 	GSize text = graphics_text_layout_get_content_size(code, font, GRect(0, 0, 90, 40), GTextOverflowModeWordWrap, GTextAlignmentLeft);
 	int16_t bw = text.w + 12;
 	int16_t bh = text.h + 2;
 
-	graphics_context_set_fill_color(ctx, badge_color_for_type(type));
+	GColor type_color = badge_color_for_type(type);
+	#ifdef PBL_COLOR
+		(void)highlighted;
+		GColor badge_bg = type_color;
+		GColor badge_text = GColorWhite;
+	#else
+		GColor badge_bg = highlighted ? GColorWhite : type_color;
+		GColor badge_text = highlighted ? type_color : GColorWhite;
+	#endif
+
+	graphics_context_set_fill_color(ctx, badge_bg);
 	graphics_fill_rect(ctx, GRect(x, y, bw, bh), 4, GCornersAll);
 
-	graphics_context_set_text_color(ctx, GColorWhite);
+	graphics_context_set_text_color(ctx, badge_text);
 	// Pebble draws the glyph near the top of its box with descender space below,
 	// so a number (no descenders) looks off-center. Nudge it to center it vertically.
 	graphics_draw_text(ctx, code, font, GRect(x + 6, y - 3, bw, bh + 4), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
@@ -435,7 +466,7 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 	#ifdef PBL_ROUND
 		GFont code_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 		int16_t bw = code_badge_width(ctx, line->code, code_font);
-		draw_code_badge(ctx, line->code, line->type, (180 - bw) / 2, 6, code_font);
+		draw_code_badge(ctx, line->code, line->type, (180 - bw) / 2, 6, code_font, menu_cell_layer_is_highlighted(cell_layer));
 		graphics_context_set_text_color(ctx, text_color);
 		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, 30, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 		graphics_context_set_text_color(ctx, time_color);
@@ -445,7 +476,7 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(0, 70, 180, 16), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 		}
 	#elif PBL_PLATFORM_EMERY
-		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
 		// Scrolls the destination when this row is focused and it overflows. The
 		// dir line sits below the badge with nothing to its left, so the cell's own
 		// left edge clips the scrolled-off text (no gutter mask needed).
@@ -457,7 +488,7 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(135, 28, 62, 20), GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 		}
 	#else
-		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+		draw_code_badge(ctx, line->code, line->type, 4, 6, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), menu_cell_layer_is_highlighted(cell_layer));
 		// Scrolls the destination when this row is focused and it overflows. The
 		// dir line sits below the badge with nothing to its left, so the cell's own
 		// left edge clips the scrolled-off text (no gutter mask needed).
@@ -500,9 +531,9 @@ void lines_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *d
 #endif
 }
 
-// Long-pressing a departure pins/unpins the stop it belongs to. The stop's
-// vehicle mode is not known here, so the type is left blank; the pinned stops
-// list fills it in from live data. The "Show later" row has no pin action.
+// Long-pressing a departure pins/unpins the stop it belongs to, tagged with the
+// stop's vehicle mode so the pinned list shows the right badge. The "Show later"
+// row has no pin action.
 void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 #ifdef SHOW_LATER_ENABLED
@@ -510,7 +541,8 @@ void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, vo
 		return;
 	}
 #endif
-	pins_show_action_menu(stopCode, stopName, "", "Pin stop", "Unpin stop");
+	char type[2] = { stopType, '\0' };
+	pins_show_action_menu(stopCode, stopName, type, "Pin stop", "Unpin stop");
 }
 
 void setup_lines_layer(Window *window, Layer *window_layer)
@@ -547,12 +579,22 @@ void setup_lines_loading_layer(Layer *window_layer)
 	GRect bounds = layer_get_bounds(window_layer);
 	int16_t top = STATUS_BAR_LAYER_HEIGHT;
 
-	GTextAlignment title_align = GTextAlignmentCenter;
-	titleLayer = text_layer_create(GRect(4, top, bounds.size.w - 8, 18));
-	text_layer_set_background_color(titleLayer, GColorClear);
-	text_layer_set_text_color(titleLayer, GColorBlack);
+	// During loading the stop name is shown as a centered title, given the same
+	// colored bar as the populated header so the background does not flash when the
+	// departures land. Color watches only; B&W keeps a plain white title.
+	GColor title_bg = GColorClear;
+	GColor title_fg = GColorBlack;
+#ifdef PBL_COLOR
+	if (stopType == 'B' || stopType == 'T') {
+		title_bg = stopType == 'B' ? GColorCobaltBlue : GColorRed;
+		title_fg = GColorWhite;
+	}
+#endif
+	titleLayer = text_layer_create(GRect(0, top, bounds.size.w, MENU_CELL_BASIC_HEADER_HEIGHT));
+	text_layer_set_background_color(titleLayer, title_bg);
+	text_layer_set_text_color(titleLayer, title_fg);
 	text_layer_set_font(titleLayer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
-	text_layer_set_text_alignment(titleLayer, title_align);
+	text_layer_set_text_alignment(titleLayer, GTextAlignmentCenter);
 	text_layer_set_text(titleLayer, stopName);
 	layer_add_child(window_layer, text_layer_get_layer(titleLayer));
 

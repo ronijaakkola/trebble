@@ -12,9 +12,10 @@ struct LineInfo {
 	int mins;      // minutes until departure; <0 means "do not show"
 };
 
-// Stores the selected stop's code/name, then opens the departures window. The
-// window fetches its own departures once shown.
-void lines_window_show(char *code, char *name);
+// Stores the selected stop's code/name/type, then opens the departures window.
+// The type ("B", "T" or "") colors the header and its badge. The window fetches
+// its own departures once shown.
+void lines_window_show(char *code, char *name, char *type);
 void lines_window_create();
 void lines_window_destroy();
 Window *lines_window_get_window();
