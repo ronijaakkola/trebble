@@ -3,6 +3,7 @@
 #include "lines_window.h"
 #include "error_window.h"
 #include "pins.h"
+#include "marquee.h"
 
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
@@ -190,29 +191,38 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	#else
 		GColor text_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
 	#endif
+	GColor bg = COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack);
 
 	// Small accent dot just before the stop title: blue for bus, red for tram.
-	// Color watches only; B&W watches keep the plain left-aligned title.
+	// Color watches only; B&W watches keep the plain left-aligned title. The dot
+	// is drawn after the title (below) so the scrolling name slides under it.
 	int16_t cy = bounds.size.h / 2;
 	int16_t text_x = 8;
 	#ifdef PBL_COLOR
-		if (stop->type[0] == 'B' || stop->type[0] == 'T') {
-			GColor dot_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
-			graphics_context_set_fill_color(ctx, dot_color);
-			// Centered vertically on the title line, with the title nudged
-			// right to clear the dot.
-			graphics_fill_circle(ctx, GPoint(text_x + 4, cy - 10), 4);
+		bool has_dot = (stop->type[0] == 'B' || stop->type[0] == 'T');
+		if (has_dot) {
 			text_x += 14;
 		}
 	#endif
 
 	int16_t text_w = bounds.size.w - text_x - 4;
 
-	graphics_context_set_text_color(ctx, text_color);
-	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(text_x, cy - 21, text_w, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+	// Scrolls when this row is focused and the name overflows; otherwise static.
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(text_x, cy - 21, text_w, 22), bg);
+
+	#ifdef PBL_COLOR
+		if (has_dot) {
+			GColor dot_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+			graphics_context_set_fill_color(ctx, dot_color);
+			// Centered vertically on the title line, in the gutter the title nudged
+			// right to clear; drawn on top of the masked, scrolling title.
+			graphics_fill_circle(ctx, GPoint(8 + 4, cy - 10), 4);
+		}
+	#endif
 
 	char dist[12];
 	snprintf(dist, sizeof(dist), "%d m", stop->dist);
+	graphics_context_set_text_color(ctx, text_color);
 	graphics_draw_text(ctx, dist, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
@@ -246,6 +256,7 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 		.draw_row = menu_draw_row_callback,
 		.select_click = menu_select_callback,
 		.select_long_click = menu_long_select_callback,
+		.selection_changed = marquee_selection_changed,
 	});
 
 	menu_layer_set_highlight_colors(mainMenuLayer, COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack), COLOR_FALLBACK(GColorBlack, GColorWhite));
@@ -364,17 +375,22 @@ void main_window_appear(Window *window)
 	}
 
 	main_window_register_inbox();
+
+	// Drive the scrolling stop names while this list is on screen.
+	marquee_attach(mainMenuLayer);
 }
 
 // Free the layers whenever another window covers this one, returning their memory
 // to the heap for the window on top.
 void main_window_disappear(Window *window)
 {
+	marquee_detach(mainMenuLayer);
 	main_destroy_ui();
 }
 
 void main_window_unload(Window *window)
 {
+	marquee_detach(mainMenuLayer);
 	main_destroy_ui();
 }
 
