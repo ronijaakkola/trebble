@@ -10,8 +10,11 @@ void splash_window_load(Window *window)
 {
 	Layer *window_layer = window_get_root_layer(window);
 	#if PBL_ROUND
-	  GRect imagePos = GRect(20, 0, 144, 140);
-	  GRect titlePos = GRect(20, 93, 144, 50);
+	  // Center the logo + title block on the round display: the 144-wide frame is
+	  // centered horizontally (x = (180 - 144) / 2 = 18) and the pair is nudged down
+	  // so it sits in the vertical middle rather than riding high near the top.
+	  GRect imagePos = GRect(18, 10, 144, 140);
+	  GRect titlePos = GRect(18, 103, 144, 50);
 	#elif PBL_PLATFORM_EMERY
 	  GRect imagePos = GRect(30, 25, 144, 140);
 	  GRect titlePos = GRect(30, 120, 144, 50);

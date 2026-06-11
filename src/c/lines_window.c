@@ -38,9 +38,9 @@ static char stopShortCode[12];
 static int lineAmount = 0;
 static struct LineInfo lines[NUM_LINES];
 
-#ifdef PBL_PLATFORM_EMERY
-// Mode icon (bus/tram line art) drawn white in the colored header tile. Loaded
-// with the window's other layers.
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_ROUND)
+// Mode icon (bus/tram line art) drawn in the colored header bar. Loaded with the
+// window's other layers. Emery and the round display both show it in the header.
 static GDrawCommandImage *busIcon;
 static GDrawCommandImage *tramIcon;
 
@@ -101,15 +101,18 @@ void lines_window_show(char *code, char *name, char *type)
 }
 
 // Shows the title + centered "Loading.." text while waiting for data, or hides
-// them to reveal the populated departures menu (whose own header takes over).
+// them to reveal the populated departures menu (whose own header takes over). The
+// title bar is not created on round (it only renders its header once data lands),
+// so each layer is toggled independently.
 static void lines_set_loading(bool loading)
 {
 	// The overlay layers only exist while the window is built (see lines_build_ui).
-	if (!loadingLayer || !titleLayer) {
-		return;
+	if (loadingLayer) {
+		layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	}
-	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
-	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
+	if (titleLayer) {
+		layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
+	}
 }
 
 #ifdef SHOW_LATER_ENABLED
@@ -363,7 +366,7 @@ int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *
 		}
 #endif
 		#if defined(PBL_ROUND)
-			return 86; // Extra room for the "X min" line under the time
+			return 78; // Badge, destination, then the countdown + time on one line
 		#elif defined(PBL_PLATFORM_EMERY)
 			return 48; // Single-line row: badge + destination, time/countdown at right
 		#else
@@ -375,25 +378,65 @@ int16_t lines_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *
 
 // Emery's header is a taller colored bar carrying a mode-icon tile, the stop name
 // and the stop-code badge; the other platforms keep the compact title bar.
-#ifdef PBL_PLATFORM_EMERY
+#if defined(PBL_PLATFORM_EMERY)
 #define LINES_HEADER_HEIGHT 36
+#elif defined(PBL_ROUND)
+#define LINES_HEADER_HEIGHT 48
 #else
 #define LINES_HEADER_HEIGHT MENU_CELL_BASIC_HEADER_HEIGHT
 #endif
 
 int16_t lines_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data)
 {
+	// No header until the departures arrive. On round the menu draws its section
+	// header even while the section is empty, which would put the stop-name bar over
+	// the "Loading.." overlay; collapsing the header to zero height keeps it hidden
+	// until there is data (and the stop's mode/color) to show.
+	if (lineAmount == 0) {
+		return 0;
+	}
 	return LINES_HEADER_HEIGHT;
 }
 
 void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t section_index, void *data)
 {
-	if (section_index != 0) {
+	if (section_index != 0 || lineAmount == 0) {
 		return;
 	}
 
 	GRect bounds = layer_get_bounds(cell_layer);
 	GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+
+#ifdef PBL_ROUND
+	// Round display gets an emery-style header: a colored bar (blue bus / red tram)
+	// with a white mode icon centered above the stop name, also centered, in white.
+	// An unknown mode keeps a plain white bar with black text and no icon, as the
+	// color carries no meaning there. Stacking the icon above the name (rather than
+	// beside it) lets the name use the bar's full width.
+	{
+	bool colored = (stopType == 'B' || stopType == 'T');
+	GColor fg = colored ? GColorWhite : GColorBlack;
+	GColor bar = colored ? (stopType == 'B' ? GColorCobaltBlue : GColorRed) : GColorWhite;
+	graphics_context_set_fill_color(ctx, bar);
+	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+	int16_t y = bounds.origin.y + 4;
+	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : NULL;
+	if (hicon) {
+		// The icon keeps its default look (black lines, white interior); it reads on
+		// either colored bar.
+		pdc_set_colors(hicon, GColorBlack, GColorWhite);
+		GSize hs = gdraw_command_image_get_bounds_size(hicon);
+		gdraw_command_image_draw(ctx, hicon, GPoint((bounds.size.w - hs.w) / 2, y));
+		y += hs.h;
+	}
+
+	// Stop name centered below the icon, using the full bar width.
+	graphics_context_set_text_color(ctx, fg);
+	graphics_draw_text(ctx, (char *)stopName, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(8, y - 3, bounds.size.w - 16, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+	return;
+	}
+#endif
 
 #ifdef PBL_PLATFORM_EMERY
 	// Emery gets a richer header: a colored bar (blue bus / red tram) with a white
@@ -583,11 +626,28 @@ void lines_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *
 		draw_code_badge(ctx, line->code, line->type, (180 - bw) / 2, 6, code_font, menu_cell_layer_is_highlighted(cell_layer));
 		graphics_context_set_text_color(ctx, text_color);
 		graphics_draw_text(ctx, line->dir, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, 30, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
-		graphics_context_set_text_color(ctx, time_color);
-		graphics_draw_text(ctx, line->time, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(0, 50, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+
+		GFont time_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
 		if (show_mins) {
+			// Clock time is the headline with the countdown in parentheses beside it
+			// ("11:57 (3 min)"). The time keeps its realtime color (green when live);
+			// the parenthesized countdown uses the normal text color. The two parts are
+			// measured and centered together as a single line.
+			char head[16];
+			snprintf(head, sizeof(head), "%s ", line->time);
+			char paren[16];
+			snprintf(paren, sizeof(paren), "(%s)", mins_buf);
+			GSize hs = graphics_text_layout_get_content_size(head, time_font, GRect(0, 0, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+			GSize ps = graphics_text_layout_get_content_size(paren, time_font, GRect(0, 0, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft);
+			int16_t x = (180 - (hs.w + ps.w)) / 2;
+			graphics_context_set_text_color(ctx, time_color);
+			graphics_draw_text(ctx, head, time_font, GRect(x, 52, hs.w + 4, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 			graphics_context_set_text_color(ctx, text_color);
-			graphics_draw_text(ctx, mins_buf, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(0, 70, 180, 16), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
+			graphics_draw_text(ctx, paren, time_font, GRect(x + hs.w, 52, ps.w + 4, 20), GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+		} else {
+			// No countdown (departure is 10+ min out): just the clock time.
+			graphics_context_set_text_color(ctx, time_color);
+			graphics_draw_text(ctx, line->time, time_font, GRect(0, 52, 180, 20), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
 		}
 	#elif PBL_PLATFORM_EMERY
 		// One line: code badge, then destination, with the time stacked over the
@@ -699,7 +759,9 @@ void setup_lines_layer(Window *window, Layer *window_layer)
 
 	lineMenuLayer = menu_layer_create(window_bounds);
 	menu_layer_set_callbacks(lineMenuLayer, NULL, (MenuLayerCallbacks){
-		#ifdef PBL_RECT
+		// The departures list shows a stop-name header on every platform, including
+		// the round display (unlike the other menus, which drop it on round).
+		#if defined(PBL_RECT) || defined(PBL_ROUND)
 		 .get_num_sections = lines_get_num_sections_callback,
 		 .get_header_height = lines_get_header_height_callback,
 		 .draw_header = lines_draw_header_callback,
@@ -726,9 +788,12 @@ void setup_lines_loading_layer(Layer *window_layer)
 	GRect bounds = layer_get_bounds(window_layer);
 	int16_t top = STATUS_BAR_LAYER_HEIGHT;
 
+#ifndef PBL_ROUND
 	// During loading the stop name is shown as a centered title, given the same
 	// colored bar as the populated header so the background does not flash when the
-	// departures land. Color watches only; B&W keeps a plain white title.
+	// departures land. Color watches only; B&W keeps a plain white title. The round
+	// display skips this: it shows only the "Loading.." text and brings in its header
+	// once the departures (and the stop's mode) are known.
 	GColor title_bg = GColorClear;
 	GColor title_fg = GColorBlack;
 #ifdef PBL_COLOR
@@ -746,6 +811,7 @@ void setup_lines_loading_layer(Layer *window_layer)
 	text_layer_set_text_alignment(titleLayer, GTextAlignmentCenter);
 	text_layer_set_text(titleLayer, stopName);
 	layer_add_child(window_layer, text_layer_get_layer(titleLayer));
+#endif
 
 	int16_t cy = top + (bounds.size.h - top) / 2 - 12;
 	loadingLayer = text_layer_create(GRect(0, cy, bounds.size.w, 24));
@@ -798,7 +864,7 @@ static void lines_build_ui(Window *window)
 	setup_lines_layer(window, window_layer);
 	setup_lines_loading_layer(window_layer);
 
-#ifdef PBL_PLATFORM_EMERY
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_ROUND)
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
 #endif
@@ -843,7 +909,7 @@ static void lines_destroy_ui(void)
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
 	}
-#ifdef PBL_PLATFORM_EMERY
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_ROUND)
 	if (busIcon) {
 		gdraw_command_image_destroy(busIcon);
 		busIcon = NULL;

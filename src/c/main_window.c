@@ -192,6 +192,23 @@ void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t 
 	graphics_draw_text(ctx, "Nearby stops", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
+#ifdef PBL_ROUND
+// The round display carries "Nearby stops" in a fixed bar pinned below the status
+// bar (rather than a scroll-away section header), so it stays visible as the list
+// scrolls. The bar is opaque so it masks the loading title beneath it.
+#define ROUND_HEADER_HEIGHT 28
+static Layer *headerLayer;
+
+static void main_header_update_proc(Layer *layer, GContext *ctx)
+{
+	GRect b = layer_get_bounds(layer);
+	graphics_context_set_fill_color(ctx, GColorWhite);
+	graphics_fill_rect(ctx, b, 0, GCornerNone);
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, "Nearby stops", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, (b.size.h - 20) / 2, b.size.w, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+}
+#endif
+
 int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 #ifdef PBL_PLATFORM_EMERY
@@ -199,6 +216,10 @@ int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *c
 	// they're a touch taller than the single-line departures rows (48), but only
 	// just enough to fit the two lines — the extra height read as too much air.
 	return 50;
+#elif defined(PBL_ROUND)
+	// Round rows stack the centered name over a centered badge + distance line, so
+	// they need a little more height than the left-aligned rectangular rows.
+	return 54;
 #else
 	return 48; // A bit taller than the Pencil design's 46 for breathing room
 #endif
@@ -244,6 +265,45 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	snprintf(dist_e, sizeof(dist_e), "%d m", stop->dist);
 	graphics_context_set_text_color(ctx, GColorDarkGray);
 	graphics_draw_text(ctx, dist_e, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy - 2, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+	return;
+	}
+#endif
+
+#ifdef PBL_ROUND
+	{
+	// Round display: everything is centered so nothing is clipped by the circular
+	// bezel on the rows above and below the focused one. The stop name sits on top,
+	// with the mode badge and distance centered together on the line below it.
+	int16_t cy = bounds.size.h / 2;
+
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(6, cy - 22, bounds.size.w - 12, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+	char dist_r[12];
+	snprintf(dist_r, sizeof(dist_r), "%d m", stop->dist);
+	GFont dist_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+	GSize dsz = graphics_text_layout_get_content_size(dist_r, dist_font, GRect(0, 0, 160, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+
+	const int16_t badge_size = 16;
+	const int16_t gap = 5;
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	int16_t total = dsz.w + (has_badge ? badge_size + gap : 0);
+	int16_t x = (bounds.size.w - total) / 2;
+	int16_t by = cy + 3;
+
+	if (has_badge) {
+		GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+		GRect badge = GRect(x, by, badge_size, badge_size);
+		graphics_context_set_fill_color(ctx, badge_color);
+		graphics_fill_rect(ctx, badge, 4, GCornersAll);
+		char letter[2] = { stop->type[0], '\0' };
+		graphics_context_set_text_color(ctx, GColorWhite);
+		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(x, by - 2, badge_size, badge_size + 2), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+		x += badge_size + gap;
+	}
+
+	graphics_context_set_text_color(ctx, GColorDarkGray);
+	graphics_draw_text(ctx, dist_r, dist_font, GRect(x, by - 1, dsz.w + 4, 18), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 	return;
 	}
 #endif
@@ -317,9 +377,14 @@ void setup_menu_layer(Window *window, Layer *window_layer)
 {
 	GRect window_bounds = layer_get_bounds(window_layer);
 	window_bounds.origin.y = STATUS_BAR_LAYER_HEIGHT;
+#ifdef PBL_ROUND
+	// Leave room for the fixed "Nearby stops" bar pinned below the status bar.
+	window_bounds.origin.y += ROUND_HEADER_HEIGHT;
+	window_bounds.size.h -= ROUND_HEADER_HEIGHT;
+#endif
 
 	mainMenuLayer = menu_layer_create(window_bounds);
-	// This has to be done slightly differently for Pebble Round
+	// The round display pins its header in a fixed bar instead of a section header.
 	menu_layer_set_callbacks(mainMenuLayer, NULL, (MenuLayerCallbacks){
 		#ifdef PBL_RECT
 		 .get_num_sections = menu_get_num_sections_callback,
@@ -383,6 +448,15 @@ static void main_build_ui(Window *window)
 	setup_menu_layer(window, window_layer);
 	setup_loading_layer(window_layer);
 
+#ifdef PBL_ROUND
+	// Fixed "Nearby stops" header pinned below the status bar, above the loading
+	// title so its opaque bar masks it. The menu was already inset below it.
+	GRect hb = layer_get_bounds(window_layer);
+	headerLayer = layer_create(GRect(0, STATUS_BAR_LAYER_HEIGHT, hb.size.w, ROUND_HEADER_HEIGHT));
+	layer_set_update_proc(headerLayer, main_header_update_proc);
+	layer_add_child(window_layer, headerLayer);
+#endif
+
 #ifdef PBL_PLATFORM_EMERY
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
@@ -404,6 +478,12 @@ static void main_destroy_ui(void)
 		menu_layer_destroy(mainMenuLayer);
 		mainMenuLayer = NULL;
 	}
+#ifdef PBL_ROUND
+	if (headerLayer) {
+		layer_destroy(headerLayer);
+		headerLayer = NULL;
+	}
+#endif
 	if (statusLayer) {
 		status_bar_layer_destroy(statusLayer);
 		statusLayer = NULL;

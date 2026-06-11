@@ -101,6 +101,40 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 		subtitle = pin_subtitle;
 	}
 
+#ifdef PBL_ROUND
+	{
+	// Round display: the icon + title are centered as a group (with the subtitle, if
+	// any, centered below) so nothing is clipped by the circular bezel on the rows
+	// above and below the focused one.
+	GDrawCommandImage *icon = (cell_index->row == HOME_ROW_NEARBY) ? nearbyIcon : pinnedIcon;
+	GFont title_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+	GSize tsz = graphics_text_layout_get_content_size(item->title, title_font, GRect(0, 0, bounds.size.w, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+	GSize isz = icon ? gdraw_command_image_get_bounds_size(icon) : GSize(0, 0);
+	int16_t gap = icon ? 8 : 0;
+	int16_t total = isz.w + gap + tsz.w;
+	int16_t x = (bounds.size.w - total) / 2;
+	bool has_sub = subtitle[0] != '\0';
+	int16_t line_cy = has_sub ? bounds.size.h / 2 - 9 : bounds.size.h / 2;
+
+	if (icon) {
+		// Vertically center the icon in the whole row (against the title + subtitle
+		// block), not just against the title line.
+		gdraw_command_image_draw(ctx, icon, GPoint(x, (bounds.size.h - isz.h) / 2));
+		x += isz.w + gap;
+	}
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, item->title, title_font, GRect(x, line_cy - 12, tsz.w + 6, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+	if (has_sub) {
+		// Left-align the subtitle to the title's left edge (x) so it lines up under
+		// the heading rather than being centered on the whole cell.
+		graphics_context_set_text_color(ctx, GColorDarkGray);
+		graphics_draw_text(ctx, subtitle, fonts_get_system_font(FONT_KEY_GOTHIC_14), GRect(x, bounds.size.h / 2 + 5, bounds.size.w - x - 4, 18), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+	}
+	return;
+	}
+#endif
+
 	#ifdef PBL_COLOR
 		GColor title_color = GColorBlack;
 		GColor subtitle_color = GColorDarkGray;
@@ -162,6 +196,19 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 {
 	GRect window_bounds = layer_get_bounds(window_layer);
 	window_bounds.origin.y = STATUS_BAR_LAYER_HEIGHT;
+#ifdef PBL_ROUND
+	// The round display normally keeps the focused row centered, which slides the
+	// whole menu when the selection moves. With only two items, size the menu to
+	// exactly fit them and center that block vertically, so the rows stay put and
+	// only the highlight moves (see menu_layer_set_center_focused below).
+	int16_t full_h = window_bounds.size.h;
+	int16_t content_h = NUM_HOME_ITEMS * home_menu_get_cell_height_callback(NULL, NULL, NULL);
+	// Start the menu so the two-row block is vertically centered, and leave slack
+	// below it (rather than sizing the frame to the content exactly) so the rows
+	// top-align in the frame and hold still instead of re-centering on selection.
+	window_bounds.origin.y = (full_h - content_h) / 2;
+	window_bounds.size.h = full_h - window_bounds.origin.y;
+#endif
 
 	homeMenuLayer = menu_layer_create(window_bounds);
 	// Pebble Round has no room for a section header, so it is left off there.
@@ -176,6 +223,11 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 		.draw_row = home_menu_draw_row_callback,
 		.select_click = home_menu_select_callback,
 	});
+
+#ifdef PBL_ROUND
+	// Lay the rows out top-down (no recentering on selection) so they hold still.
+	menu_layer_set_center_focused(homeMenuLayer, false);
+#endif
 
 	// Color watches use the light-gray selection (black row icons stay visible);
 	// B&W watches use the classic inverted black selection, where the row icons and

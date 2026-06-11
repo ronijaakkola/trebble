@@ -189,9 +189,32 @@ void pins_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t 
 	graphics_draw_text(ctx, "Pinned stops", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
+#ifdef PBL_ROUND
+// The round display carries "Pinned stops" in a fixed bar pinned below the status
+// bar (rather than a scroll-away section header), so it stays visible as the list
+// scrolls. The bar is opaque so it masks the loading title beneath it.
+#define ROUND_HEADER_HEIGHT 28
+static Layer *headerLayer;
+
+static void pins_header_update_proc(Layer *layer, GContext *ctx)
+{
+	GRect b = layer_get_bounds(layer);
+	graphics_context_set_fill_color(ctx, GColorWhite);
+	graphics_fill_rect(ctx, b, 0, GCornerNone);
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, "Pinned stops", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(0, (b.size.h - 20) / 2, b.size.w, 22), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+}
+#endif
+
 int16_t pins_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef PBL_ROUND
+	// Round rows stack a centered mode badge over the centered name, so they need a
+	// little more height than the single-line rectangular rows.
+	return 50;
+#else
 	return 40; // Matches the nearby stops list.
+#endif
 }
 
 void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data)
@@ -221,6 +244,30 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	int16_t text_w = bounds.size.w - text_x - 4;
 	int16_t cy = bounds.size.h / 2;
 	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorBlack, GRect(text_x, cy - 13, text_w, 24), PIN_HL_COLOR);
+	return;
+	}
+#endif
+
+#ifdef PBL_ROUND
+	{
+	// Round display: a centered mode badge over the centered stop name, so nothing
+	// is clipped by the circular bezel on the rows above and below the focused one.
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	int16_t name_y = has_badge ? bounds.size.h / 2 - 3 : bounds.size.h / 2 - 13;
+
+	if (has_badge) {
+		const int16_t badge_size = 18;
+		GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+		GRect badge = GRect((bounds.size.w - badge_size) / 2, bounds.size.h / 2 - 22, badge_size, badge_size);
+		graphics_context_set_fill_color(ctx, badge_color);
+		graphics_fill_rect(ctx, badge, 4, GCornersAll);
+		char letter[2] = { stop->type[0], '\0' };
+		graphics_context_set_text_color(ctx, GColorWhite);
+		graphics_draw_text(ctx, letter, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect(badge.origin.x, badge.origin.y - 1, badge_size, badge_size), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+	}
+
+	graphics_context_set_text_color(ctx, GColorBlack);
+	graphics_draw_text(ctx, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GRect(6, name_y, bounds.size.w - 12, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 	return;
 	}
 #endif
@@ -285,8 +332,14 @@ void setup_pins_menu_layer(Window *window, Layer *window_layer)
 {
 	GRect window_bounds = layer_get_bounds(window_layer);
 	window_bounds.origin.y = STATUS_BAR_LAYER_HEIGHT;
+#ifdef PBL_ROUND
+	// Leave room for the fixed "Pinned stops" bar pinned below the status bar.
+	window_bounds.origin.y += ROUND_HEADER_HEIGHT;
+	window_bounds.size.h -= ROUND_HEADER_HEIGHT;
+#endif
 
 	pinsMenuLayer = menu_layer_create(window_bounds);
+	// The round display pins its header in a fixed bar instead of a section header.
 	menu_layer_set_callbacks(pinsMenuLayer, NULL, (MenuLayerCallbacks){
 		#ifdef PBL_RECT
 		 .get_num_sections = pins_get_num_sections_callback,
@@ -345,6 +398,15 @@ static void pins_build_ui(Window *window)
 	setup_pins_menu_layer(window, window_layer);
 	setup_pins_loading_layer(window_layer);
 
+#ifdef PBL_ROUND
+	// Fixed "Pinned stops" header pinned below the status bar, above the loading
+	// title so its opaque bar masks it. The menu was already inset below it.
+	GRect hb = layer_get_bounds(window_layer);
+	headerLayer = layer_create(GRect(0, STATUS_BAR_LAYER_HEIGHT, hb.size.w, ROUND_HEADER_HEIGHT));
+	layer_set_update_proc(headerLayer, pins_header_update_proc);
+	layer_add_child(window_layer, headerLayer);
+#endif
+
 #ifdef PBL_PLATFORM_EMERY
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
@@ -366,6 +428,12 @@ static void pins_destroy_ui(void)
 		menu_layer_destroy(pinsMenuLayer);
 		pinsMenuLayer = NULL;
 	}
+#ifdef PBL_ROUND
+	if (headerLayer) {
+		layer_destroy(headerLayer);
+		headerLayer = NULL;
+	}
+#endif
 	if (statusLayer) {
 		status_bar_layer_destroy(statusLayer);
 		statusLayer = NULL;
