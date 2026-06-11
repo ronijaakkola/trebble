@@ -196,8 +196,9 @@ int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *c
 {
 #ifdef PBL_PLATFORM_EMERY
 	// Emery rows stack the name over a meta line (stop-code badge + distance), so
-	// they need more height than the single-line layout on the other platforms.
-	return 56;
+	// they're a touch taller than the single-line departures rows (48), but only
+	// just enough to fit the two lines — the extra height read as too much air.
+	return 50;
 #else
 	return 48; // A bit taller than the Pencil design's 46 for breathing room
 #endif
@@ -242,7 +243,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	char dist_e[12];
 	snprintf(dist_e, sizeof(dist_e), "%d m", stop->dist);
 	graphics_context_set_text_color(ctx, GColorDarkGray);
-	graphics_draw_text(ctx, dist_e, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy + 2, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+	graphics_draw_text(ctx, dist_e, fonts_get_system_font(FONT_KEY_GOTHIC_18), GRect(text_x, cy - 2, text_w, 20), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 	return;
 	}
 #endif
