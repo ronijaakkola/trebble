@@ -38,6 +38,21 @@ function isEmulator() {
 var feedToCity = {
   HSL: "Helsinki",
   tampere: "Tampere",
+  Hameenlinna: "Hameenlinna",
+  Joensuu: "Joensuu",
+  LINKKI: "Jyvaskyla",
+  Kotka: "Kotka",
+  Kouvola: "Kouvola",
+  Kuopio: "Kuopio",
+  Lahti: "Lahti",
+  Lappeenranta: "Lappeenranta",
+  Mikkeli: "Mikkeli",
+  OULU: "Oulu",
+  Pori: "Pori",
+  Raasepori: "Raasepori",
+  Rovaniemi: "Rovaniemi",
+  FOLI: "Turku",
+  Vaasa: "Vaasa",
 };
 
 function cityFromGtfsId(gtfsId) {
