@@ -11,6 +11,15 @@ static MenuLayer *pinsMenuLayer;
 static StatusBarLayer *statusLayer;
 static TextLayer *loadingLayer;
 static TextLayer *titleLayer;
+// Second, smaller line shown only in the genuine empty state, beneath the
+// "No added pins" heading, guiding the user on how to add pins.
+static TextLayer *guidanceLayer;
+
+// loadingLayer's frame for a single centered line (loading / error states) and,
+// when the empty-state guidance is shown, the heading is raised to make room for
+// the guidance line below it. Computed once the window is built (see setup).
+static GRect msgRectSingle;
+static GRect msgRectHeading;
 
 static int pinAmount = 0;
 static struct StopInfo pinStops[NUM_STOPS];
@@ -52,6 +61,27 @@ static void pins_set_loading(bool loading)
 	}
 	layer_set_hidden(text_layer_get_layer(loadingLayer), !loading);
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
+	// The guidance line belongs only to the empty state (set by pins_show_empty);
+	// hiding the overlay (rows arrived) also dismisses it.
+	if (!loading && guidanceLayer) {
+		layer_set_hidden(text_layer_get_layer(guidanceLayer), true);
+	}
+}
+
+// Shows the two-line empty state: a "No added pins" heading with a smaller line
+// below explaining how to add one. Reuses the centered overlay (title + status
+// text) shared with the loading/error states, raising the heading to make room
+// for the guidance line. Idempotent — the heading uses an absolute frame so it
+// is safe to call again (e.g. on reappear or after unpinning the last stop).
+static void pins_show_empty_state(void)
+{
+	if (!loadingLayer || !guidanceLayer) {
+		return;
+	}
+	layer_set_frame(text_layer_get_layer(loadingLayer), msgRectHeading);
+	text_layer_set_text(loadingLayer, "No added pins");
+	text_layer_set_text(guidanceLayer, "To add pins, long-press on a nearby stop.");
+	layer_set_hidden(text_layer_get_layer(guidanceLayer), false);
 }
 
 // Maps a Digitransit vehicle mode string to a single-letter type indicator.
@@ -376,13 +406,33 @@ void setup_pins_loading_layer(Layer *window_layer)
 	layer_add_child(window_layer, text_layer_get_layer(titleLayer));
 
 	int16_t cy = top + (bounds.size.h - top) / 2 - 12;
-	loadingLayer = text_layer_create(GRect(0, cy, bounds.size.w, 24));
+	// Single centered line for loading / error states; the empty state raises the
+	// heading by one line so the guidance line below keeps the pair centered.
+	msgRectSingle = GRect(0, cy, bounds.size.w, 24);
+	msgRectHeading = GRect(0, cy - 18, bounds.size.w, 24);
+
+	loadingLayer = text_layer_create(msgRectSingle);
 	text_layer_set_background_color(loadingLayer, GColorClear);
 	text_layer_set_text_color(loadingLayer, GColorBlack);
 	text_layer_set_font(loadingLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
 	text_layer_set_text_alignment(loadingLayer, GTextAlignmentCenter);
 	text_layer_set_text(loadingLayer, "Loading..");
 	layer_add_child(window_layer, text_layer_get_layer(loadingLayer));
+
+	// Smaller guidance line beneath the heading, wrapping across the remaining
+	// space. Hidden until the empty state is shown (see pins_show_empty_state).
+	int16_t gy = msgRectHeading.origin.y + 24;
+	int16_t gpad = 12;
+	guidanceLayer = text_layer_create(GRect(gpad, gy, bounds.size.w - gpad * 2, bounds.size.h - gy));
+	text_layer_set_background_color(guidanceLayer, GColorClear);
+	// Dark gray plays the secondary line down against the heading; B&W watches
+	// have no gray, so fall back to black there.
+	text_layer_set_text_color(guidanceLayer, COLOR_FALLBACK(GColorDarkGray, GColorBlack));
+	text_layer_set_font(guidanceLayer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+	text_layer_set_text_alignment(guidanceLayer, GTextAlignmentCenter);
+	text_layer_set_overflow_mode(guidanceLayer, GTextOverflowModeWordWrap);
+	layer_set_hidden(text_layer_get_layer(guidanceLayer), true);
+	layer_add_child(window_layer, text_layer_get_layer(guidanceLayer));
 }
 
 // Builds the window's layers (menu + loading overlay + status bar). Split out so
@@ -446,6 +496,10 @@ static void pins_destroy_ui(void)
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
 	}
+	if (guidanceLayer) {
+		text_layer_destroy(guidanceLayer);
+		guidanceLayer = NULL;
+	}
 #ifdef PBL_PLATFORM_EMERY
 	if (busIcon) {
 		gdraw_command_image_destroy(busIcon);
@@ -475,7 +529,7 @@ void pins_window_load(Window *window)
 
 	// With no pins there is nothing to fetch; show the empty state instead.
 	if (pins_count() == 0) {
-		text_layer_set_text(loadingLayer, "No pinned stops");
+		pins_show_empty_state();
 		return;
 	}
 
@@ -515,10 +569,8 @@ static void pins_prune_removed(void)
 
 	// Fall back to the empty state once the last pin is gone.
 	if (pinAmount == 0) {
-		if (loadingLayer) {
-			text_layer_set_text(loadingLayer, "No pinned stops");
-		}
 		pins_set_loading(true);
+		pins_show_empty_state();
 	}
 }
 
@@ -533,8 +585,8 @@ void pins_window_appear(Window *window)
 		menu_layer_reload_data(pinsMenuLayer);
 		pins_set_loading(pinAmount == 0);
 		// No rows to show (e.g. everything was unpinned): show the empty state.
-		if (pinAmount == 0 && loadingLayer) {
-			text_layer_set_text(loadingLayer, "No pinned stops");
+		if (pinAmount == 0) {
+			pins_show_empty_state();
 		} else if (pinAmount > 0) {
 			// Restore the row the user left on, clamped in case the list shrank.
 			uint16_t row = savedSelectedRow < (uint16_t)pinAmount ? savedSelectedRow : (uint16_t)(pinAmount - 1);
