@@ -34,7 +34,7 @@ function isEmulator() {
 
 // Maps a Digitransit feed id (the part of a gtfsId before the colon) to the city
 // label shown in the menu header. Only the regions we have themed so far are
-// listed; any other feed leaves the header on its default ("Trebble").
+// listed; any other feed leaves the header on its default ("Vuoro").
 var feedToCity = {
   HSL: "Helsinki",
   tampere: "Tampere",

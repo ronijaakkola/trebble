@@ -89,7 +89,7 @@ void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint
 	int16_t text_y = bounds.origin.y + 2;
 	int16_t text_h = bounds.size.h - 2;
 
-	graphics_draw_text(ctx, "Trebble", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+	graphics_draw_text(ctx, "Vuoro", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
 		GRect(bounds.origin.x + pad, text_y, half - pad, text_h),
 		GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 

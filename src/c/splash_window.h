@@ -1,6 +1,6 @@
 #pragma once
 
-#define BG_COLOR GColorTiffanyBlue
+#define BG_COLOR GColorCobaltBlue
 
 void splash_window_create();
 void splash_window_destroy();

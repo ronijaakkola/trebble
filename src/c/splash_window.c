@@ -37,7 +37,7 @@ void splash_window_load(Window *window)
 	//splashImageTitle = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 93, 144, 50), GRect(20, 93, 144, 50)));
 	splashImageTitle = text_layer_create(titlePos);
   text_layer_set_background_color(splashImageTitle, COLOR_FALLBACK(BG_COLOR, GColorBlack));
-	text_layer_set_text(splashImageTitle, "Trebble");
+	text_layer_set_text(splashImageTitle, "Vuoro");
 	text_layer_set_font(splashImageTitle, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
 	text_layer_set_text_color(splashImageTitle, GColorWhite);
 	text_layer_set_text_alignment(splashImageTitle, GTextAlignmentCenter);

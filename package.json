@@ -4,7 +4,7 @@
     "keywords": [],
     "name": "trebble",
     "pebble": {
-        "displayName": "Trebble",
+        "displayName": "Vuoro",
         "enableMultiJS": true,
         "messageKeys": [
             "stopMessage",
