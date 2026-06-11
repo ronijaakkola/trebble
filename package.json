@@ -79,6 +79,12 @@
                     "type": "bitmap"
                 },
                 {
+                    "file": "icons/10px-location.png",
+                    "name": "IMAGE_LOCATION",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
                     "file": "icons/80px-icon-no-phone-connection.pdc",
                     "name": "IMAGE_NO_PHONE_CONNECTION",
                     "targetPlatforms": null,

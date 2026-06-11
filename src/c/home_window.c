@@ -18,6 +18,7 @@ static uint16_t savedSelectedRow = 0;
 // redraw, mirroring how the error window holds its PDC icon.
 static GDrawCommandImage *nearbyIcon;
 static GDrawCommandImage *pinnedIcon;
+static GBitmap *locationIcon; // small pin shown before the location label in the header
 
 // Detected city, shown in the menu header. Resolved from the feed prefix of the
 // nearest stop by the JS component (see getCityFromLocation in app.js). Persisted
@@ -93,9 +94,31 @@ void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint
 		GRect(bounds.origin.x + pad, text_y, half - pad, text_h),
 		GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 
-	graphics_draw_text(ctx, location, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-		GRect(bounds.origin.x + half, text_y, half - pad, text_h),
+	// Right side: the location label pinned to the right edge, preceded by a small
+	// location pin. Measure the label first so the icon can sit immediately to its
+	// left; the icon eats into the label's share of the band so the two never
+	// collide with the app name on the left.
+	GFont loc_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+	int16_t icon_w = locationIcon ? gbitmap_get_bounds(locationIcon).size.w : 0;
+	int16_t icon_h = locationIcon ? gbitmap_get_bounds(locationIcon).size.h : 0;
+	int16_t icon_gap = icon_w ? 3 : 0;
+	int16_t right_edge = bounds.origin.x + bounds.size.w - pad;
+	int16_t avail = half - pad - icon_w - icon_gap;
+	GSize loc_sz = graphics_text_layout_get_content_size(location, loc_font,
+		GRect(0, 0, avail, text_h), GTextOverflowModeTrailingEllipsis, GTextAlignmentRight);
+	int16_t loc_w = loc_sz.w < avail ? loc_sz.w : avail;
+	int16_t loc_x = right_edge - loc_w;
+
+	graphics_draw_text(ctx, location, loc_font,
+		GRect(loc_x, text_y, loc_w, text_h),
 		GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+
+	if (locationIcon) {
+		GRect icon_rect = GRect(loc_x - icon_gap - icon_w,
+			bounds.origin.y + (bounds.size.h - icon_h) / 2, icon_w, icon_h);
+		graphics_context_set_compositing_mode(ctx, GCompOpSet);
+		graphics_draw_bitmap_in_rect(ctx, locationIcon, icon_rect);
+	}
 }
 
 int16_t home_menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -286,6 +309,7 @@ static void home_build_ui(Window *window)
 
 	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_STOP);
 	pinnedIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TIMELINE_PIN);
+	locationIcon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_LOCATION);
 
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
@@ -315,6 +339,10 @@ static void home_destroy_ui(void)
 	if (pinnedIcon) {
 		gdraw_command_image_destroy(pinnedIcon);
 		pinnedIcon = NULL;
+	}
+	if (locationIcon) {
+		gbitmap_destroy(locationIcon);
+		locationIcon = NULL;
 	}
 }
 
