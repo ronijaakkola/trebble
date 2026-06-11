@@ -37,6 +37,10 @@ static struct StopInfo stops[NUM_STOPS];
 static bool stop_transfer_started;
 static int stop_index;
 
+// True once a stop transfer has completed, so we can tell "still loading" apart
+// from "loaded but found nothing" and show the right centered message.
+static bool stops_loaded;
+
 // Remembers the highlighted row while the menu layer is freed (e.g. with the
 // departures window on top) so returning to this list restores the tapped stop
 // rather than resetting to the top.
@@ -124,12 +128,19 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		APP_LOG(APP_LOG_LEVEL_INFO, "MainWindow: Stop message transfer ended. Total of %d stops were transfered.", stop_index);
 		stop_transfer_started = false;
 		stopAmount = stop_index;
+		stops_loaded = true;
 		// The list may have been freed if the window was covered before the data
 		// arrived; the count is retained so it renders when the window reappears.
 		if (mainMenuLayer) {
 			menu_layer_reload_data(mainMenuLayer);
 		}
-		main_set_loading(false);
+		// No nearby stops were found: keep the centered overlay visible but swap
+		// the "Loading.." text for an empty-state message (same font/centering),
+		// matching the "No departures" pattern on the departures screen.
+		if (stopAmount == 0 && loadingLayer) {
+			text_layer_set_text(loadingLayer, "No nearby stops");
+		}
+		main_set_loading(stopAmount == 0);
 		vibes_short_pulse();
 		return;
 	}
@@ -514,6 +525,7 @@ void main_window_load(Window *window)
 	// Clear any stops left over from a previous load so the menu does not render
 	// stale rows (and its header) behind the loading overlay.
 	stopAmount = 0;
+	stops_loaded = false;
 	main_build_ui(window);
 	main_set_loading(true);
 
@@ -540,6 +552,11 @@ void main_window_appear(Window *window)
 	if (!mainMenuLayer) {
 		main_build_ui(window);
 		menu_layer_reload_data(mainMenuLayer);
+		// The overlay was just rebuilt with its default "Loading.." text; if the
+		// earlier lookup finished with no stops, restore the empty-state message.
+		if (stops_loaded && stopAmount == 0 && loadingLayer) {
+			text_layer_set_text(loadingLayer, "No nearby stops");
+		}
 		main_set_loading(stopAmount == 0);
 		// Restore the row the user left on, clamped in case the list shrank.
 		if (stopAmount > 0) {
