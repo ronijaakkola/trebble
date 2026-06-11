@@ -22,6 +22,26 @@ static int pin_index;
 // rather than resetting to the top.
 static uint16_t savedSelectedRow = 0;
 
+#ifdef PBL_PLATFORM_EMERY
+// Mode icons (bus/tram line art) drawn at the left of each row on emery instead
+// of the letter badge. Loaded with the window's other layers.
+static GDrawCommandImage *busIcon;
+static GDrawCommandImage *tramIcon;
+
+// Recolors every command in a PDC image, used to draw the line-art mode icons in
+// their default look (black lines, white interior). Mirrors home_window.c.
+static void pdc_set_colors(GDrawCommandImage *image, GColor stroke, GColor fill)
+{
+	GDrawCommandList *list = gdraw_command_image_get_command_list(image);
+	uint32_t num = gdraw_command_list_get_num_commands(list);
+	for (uint32_t i = 0; i < num; ++i) {
+		GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
+		gdraw_command_set_stroke_color(cmd, stroke);
+		gdraw_command_set_fill_color(cmd, fill);
+	}
+}
+#endif
+
 // Shows the title + centered status text (loading / empty / error), or hides
 // them to reveal the populated pinned stops menu (whose own header takes over).
 static void pins_set_loading(bool loading)
@@ -183,6 +203,28 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	struct StopInfo *stop = &pinStops[cell_index->row];
 	GRect bounds = layer_get_bounds(cell_layer);
 
+#ifdef PBL_PLATFORM_EMERY
+	{
+	// Emery shows a mode icon (black lines, white interior) on the left instead of
+	// the letter badge, matching the nearby stops list, with the name centered.
+	int16_t icon_left = 8;
+	int16_t text_x = icon_left;
+	GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon
+		: stop->type[0] == 'T' ? tramIcon : NULL;
+	if (icon) {
+		pdc_set_colors(icon, GColorBlack, GColorWhite);
+		GSize isize = gdraw_command_image_get_bounds_size(icon);
+		gdraw_command_image_draw(ctx, icon, GPoint(icon_left, (bounds.size.h - isize.h) / 2));
+		text_x = icon_left + isize.w + 8;
+	}
+
+	int16_t text_w = bounds.size.w - text_x - 4;
+	int16_t cy = bounds.size.h / 2;
+	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GColorBlack, GRect(text_x, cy - 13, text_w, 24), PIN_HL_COLOR);
+	return;
+	}
+#endif
+
 	#ifdef PBL_COLOR
 		GColor text_color = GColorBlack;
 	#else
@@ -303,6 +345,11 @@ static void pins_build_ui(Window *window)
 	setup_pins_menu_layer(window, window_layer);
 	setup_pins_loading_layer(window_layer);
 
+#ifdef PBL_PLATFORM_EMERY
+	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
+	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+#endif
+
 	statusLayer = status_bar_layer_create();
 	status_bar_layer_set_separator_mode(statusLayer, StatusBarLayerSeparatorModeDotted);
 	status_bar_layer_set_colors(statusLayer, GColorClear, GColorBlack);
@@ -331,6 +378,16 @@ static void pins_destroy_ui(void)
 		text_layer_destroy(titleLayer);
 		titleLayer = NULL;
 	}
+#ifdef PBL_PLATFORM_EMERY
+	if (busIcon) {
+		gdraw_command_image_destroy(busIcon);
+		busIcon = NULL;
+	}
+	if (tramIcon) {
+		gdraw_command_image_destroy(tramIcon);
+		tramIcon = NULL;
+	}
+#endif
 }
 
 void pins_window_load(Window *window)
