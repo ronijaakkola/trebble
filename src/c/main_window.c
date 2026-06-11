@@ -4,6 +4,7 @@
 #include "error_window.h"
 #include "pins.h"
 #include "marquee.h"
+#include "region.h"
 
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
@@ -336,7 +337,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 	if (has_badge) {
 		#ifdef PBL_COLOR
-			GColor badge_color = stop->type[0] == 'B' ? GColorCobaltBlue : GColorRed;
+			GColor badge_color = region_mode_color(stop->code, stop->type[0]);
 			GColor letter_color = GColorWhite;
 		#else
 			bool highlighted = menu_cell_layer_is_highlighted(cell_layer);

@@ -34,7 +34,9 @@
             "pinDist",
             "pinMode",
             "pinNoFound",
-            "noInternet"
+            "noInternet",
+            "cityMessage",
+            "cityName"
         ],
         "projectType": "native",
         "resources": {

@@ -45,6 +45,26 @@ function createDeparturesQuery(stopCode, startTime, numberOfDepartures) {
 }`;
 }
 
+// Resolves the surrounding city/region by finding the nearest stops and reading
+// the feed prefix of a gtfsId (e.g. "HSL:..." -> Helsinki). Only the id is
+// needed. A few results are fetched so long-distance "MATKA" stops can be
+// skipped, and a wide radius makes detection work even where the nearest local
+// stop is beyond the normal nearby-stops range.
+function createCityQuery(latitude, longitude) {
+  return `
+{
+  stopsByRadius(lat: ${latitude}, lon: ${longitude}, radius: 5000, first: 5) {
+    edges {
+      node {
+        stop {
+          gtfsId
+        }
+      }
+    }
+  }
+}`;
+}
+
 // Looks up a set of stops by their gtfsId so their coordinates (and current
 // name/mode) can be resolved for the pinned stops list. Digitransit returns the
 // stops in the order of the requested ids, with null for any id it cannot find.
@@ -68,6 +88,7 @@ function createPinnedStopsQuery(codes) {
 
 module.exports = {
   createStopsQuery,
+  createCityQuery,
   createDeparturesQuery,
   createPinnedStopsQuery
 };

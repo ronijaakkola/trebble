@@ -4,6 +4,7 @@
 #include "error_window.h"
 #include "pins.h"
 #include "marquee.h"
+#include "region.h"
 
 // The "Show later" paging UI is left out of aplite: its ~24KB heap is already
 // tight for the departures view (which is why this window frees its layers when
@@ -447,7 +448,7 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	// bar with black text.
 	bool colored = (stopType == 'B' || stopType == 'T');
 	GColor fg = colored ? GColorWhite : GColorBlack;
-	GColor bar = colored ? (stopType == 'B' ? GColorCobaltBlue : GColorRed) : GColorWhite;
+	GColor bar = colored ? region_mode_color(stopCode, stopType) : GColorWhite;
 	graphics_context_set_fill_color(ctx, bar);
 	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
@@ -504,7 +505,7 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	GColor text_color = GColorBlack;
 #ifdef PBL_COLOR
 	if (stopType == 'B' || stopType == 'T') {
-		graphics_context_set_fill_color(ctx, stopType == 'B' ? GColorCobaltBlue : GColorRed);
+		graphics_context_set_fill_color(ctx, region_mode_color(stopCode, stopType));
 		graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 		text_color = GColorWhite;
 	}
@@ -519,14 +520,9 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 // the type is not distinguished.
 static GColor badge_color_for_type(const char *type)
 {
-	if (type[0] == 'B') {
-		return COLOR_FALLBACK(GColorCobaltBlue, GColorBlack);
-	}
-	if (type[0] == 'T') {
-		return COLOR_FALLBACK(GColorRed, GColorBlack);
-	}
-	// Unknown mode: neutral badge so the line code stays readable.
-	return GColorBlack;
+	// region_mode_color keys off the viewed stop's feed (HSL trams are green); the
+	// fallback keeps both modes black on black-and-white watches.
+	return COLOR_FALLBACK(region_mode_color(stopCode, type[0]), GColorBlack);
 }
 
 #ifdef PBL_ROUND
@@ -798,7 +794,7 @@ void setup_lines_loading_layer(Layer *window_layer)
 	GColor title_fg = GColorBlack;
 #ifdef PBL_COLOR
 	if (stopType == 'B' || stopType == 'T') {
-		title_bg = stopType == 'B' ? GColorCobaltBlue : GColorRed;
+		title_bg = region_mode_color(stopCode, stopType);
 		title_fg = GColorWhite;
 	}
 #endif

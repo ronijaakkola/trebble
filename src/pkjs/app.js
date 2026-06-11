@@ -9,8 +9,14 @@ var geolocationOptions = {
   maximumAge: 0,
 };
 
-// Fake [lat, lon] used in place of real GPS when running in the emulator
-var debugLocation = [61.50048576694305, 23.785473194189514];
+// Fake [lat, lon] used in place of real GPS when running in the emulator. Switch
+// debugCity to test a different region (menu header city, stop colors, etc.).
+var debugLocations = {
+  tampere: [61.50048576694305, 23.785473194189514],
+  helsinki: [60.1699, 24.9384],
+};
+var debugCity = "tampere";
+var debugLocation = debugLocations[debugCity];
 
 // The emulator reports its model as "qemu_platform_<platform>"; real hardware
 // reports a real model name (e.g. "pebble_black"). Use that to detect the emulator.
@@ -24,6 +30,25 @@ function isEmulator() {
   } catch (e) {
     return false;
   }
+}
+
+// Maps a Digitransit feed id (the part of a gtfsId before the colon) to the city
+// label shown in the menu header. Only the regions we have themed so far are
+// listed; any other feed leaves the header on its default ("Trebble").
+var feedToCity = {
+  HSL: "Helsinki",
+  tampere: "Tampere",
+};
+
+function cityFromGtfsId(gtfsId) {
+  var feed = gtfsId.split(":")[0];
+  return feedToCity[feed] || "";
+}
+
+// The watch only renders buses and trams (icons, badges, colors); every other
+// mode is filtered out here so unsupported types never reach it.
+function isSupportedMode(mode) {
+  return mode === "BUS" || mode === "TRAM";
 }
 
 // Stop search parameters
@@ -109,7 +134,12 @@ function getStopsFromLocation(pos) {
             .filter(function (edge) {
               // Ignore results which code starts with MATKA. These
               // seem to be long range bus stops which do not interest us.
-              return !edge.node.stop.gtfsId.startsWith("MATKA:");
+              // (MATKA stops are buses by mode, so the mode check below would
+              // not exclude them on its own.)
+              return (
+                !edge.node.stop.gtfsId.startsWith("MATKA:") &&
+                isSupportedMode(edge.node.stop.vehicleMode)
+              );
             })
             .slice(0, stopsLimit)
             .map(function (edge) {
@@ -137,6 +167,73 @@ function getStopsFromLocation(pos) {
   };
 
   req.send(query);
+}
+
+// Resolves the city the user is in from the feed prefix of the nearest stop and
+// sends it to the watch for the menu header. A failed lookup (no stops, network
+// error, unknown feed) sends an empty label rather than an error screen — the
+// header simply keeps its default.
+function getCityFromLocation(pos) {
+  var crd = pos.coords;
+  var query = queries.createCityQuery(crd.latitude, crd.longitude);
+  var req = createGraphQLRequest(url);
+
+  req.onload = function () {
+    if (req.readyState !== 4) {
+      return;
+    }
+    if (req.status !== 200 || req.responseText === "") {
+      console.log("JS: City lookup returned no data. Status: " + req.status);
+      return;
+    }
+
+    var response = JSON.parse(req.responseText);
+    var edges =
+      response && response.data && response.data.stopsByRadius
+        ? response.data.stopsByRadius.edges
+        : null;
+    if (!edges) {
+      console.log("JS: No valid city data in the GraphQL response.");
+      return;
+    }
+
+    var city = "";
+    for (var i = 0; i < edges.length; i++) {
+      var gtfsId = edges[i].node.stop.gtfsId;
+      // Skip long-distance MATKA stops, as in the nearby-stops flow.
+      if (gtfsId.indexOf("MATKA:") === 0) {
+        continue;
+      }
+      city = cityFromGtfsId(gtfsId);
+      break;
+    }
+
+    console.log("JS: Detected city: '" + city + "'");
+    Pebble.sendAppMessage({ cityName: city });
+  };
+
+  req.send(query);
+}
+
+// Entry point for a cityMessage request: gets the user's location (debug
+// location in the emulator) and resolves the surrounding city. GPS failures are
+// swallowed — the header just keeps its default rather than showing an error.
+function handleCityDetection() {
+  if (debugLocation && isEmulator()) {
+    console.log("JS: Emulator detected, using debug location for city.");
+    getCityFromLocation({
+      coords: { latitude: debugLocation[0], longitude: debugLocation[1] },
+    });
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    getCityFromLocation,
+    function (err) {
+      console.warn("JS: GPS error for city (" + err.code + "): " + err.message);
+    },
+    geolocationOptions
+  );
 }
 
 // Fetches departures for a stop. `mode` selects the window:
@@ -171,6 +268,15 @@ function getDepartingLines(stopCode, mode) {
         if (response && response.data && response.data.stop) {
           var stop = response.data.stop;
           var stoptimes = stop.stoptimesWithoutPatterns;
+
+          // Drop departures of unsupported modes (only buses and trams render on
+          // the watch) before paging, so the window and the "show later" cursor
+          // are computed from what the watch will actually show.
+          if (stoptimes) {
+            stoptimes = stoptimes.filter(function (st) {
+              return isSupportedMode(st.trip.route.mode);
+            });
+          }
 
           if (!stoptimes || stoptimes.length === 0) {
             console.log("JS: No departing lines found for this window.");
@@ -275,8 +381,9 @@ function getPinnedStops(codes, lat, lon) {
     var hasLocation = lat !== null && lon !== null;
     var stops = response.data.stops
       .filter(function (stop) {
-        // Unknown ids come back as null; drop them.
-        return stop != null;
+        // Unknown ids come back as null; drop them. Also drop any pinned stop
+        // whose mode the watch cannot render (only buses and trams).
+        return stop != null && isSupportedMode(stop.vehicleMode);
       })
       .map(function (stop) {
         return {
@@ -405,6 +512,9 @@ Pebble.addEventListener("appmessage", function (e) {
       "JS: Received lineMore with stopCode: " + e.payload.lineMore
     );
     getDepartingLines(e.payload.lineMore, "more");
+  } else if (e.payload.cityMessage) {
+    console.log("JS: Received cityMessage.");
+    handleCityDetection();
   } else if (typeof e.payload.pinMessage !== "undefined") {
     console.log("JS: Received pinMessage with codes: " + e.payload.pinMessage);
     handlePinnedStops(e.payload.pinMessage);

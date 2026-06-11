@@ -3,6 +3,7 @@
 #include "main_window.h"
 #include "pins.h"
 #include "pins_window.h"
+#include "splash_window.h" // BG_COLOR, shared with the splash screen
 
 static Window *homeWindow;
 static MenuLayer *homeMenuLayer;
@@ -18,6 +19,14 @@ static uint16_t savedSelectedRow = 0;
 static GDrawCommandImage *nearbyIcon;
 static GDrawCommandImage *pinnedIcon;
 
+// Detected city, shown in the menu header. Resolved from the feed prefix of the
+// nearest stop by the JS component (see getCityFromLocation in app.js). Persisted
+// (key 50 — pins use 1 and 100+) so the last known city shows immediately on the
+// next launch, before a fresh lookup completes. Empty means "unknown", in which
+// case the header falls back to the app name.
+#define PERSIST_KEY_CITY 50
+static char detected_city[24] = "";
+
 // Home menu items. Subtitle is optional; an empty subtitle renders a single
 // vertically centered title (like "Nearby stops"). Icons will be added later.
 struct HomeItem {
@@ -28,6 +37,10 @@ struct HomeItem {
 #define NUM_HOME_ITEMS 2
 #define HOME_ROW_NEARBY 0
 #define HOME_ROW_PINNED 1
+
+// Single-line header on the splash-screen background color: app name on the left
+// edge, detected location on the right.
+#define HOME_HEADER_HEIGHT 22
 
 static struct HomeItem home_items[NUM_HOME_ITEMS] = {
 	{ "Nearby stops", "" },
@@ -51,7 +64,7 @@ uint16_t home_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section
 
 int16_t home_menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data)
 {
-	return MENU_CELL_BASIC_HEADER_HEIGHT;
+	return HOME_HEADER_HEIGHT;
 }
 
 void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t section_index, void *data)
@@ -60,8 +73,29 @@ void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint
 		return;
 	}
 	GRect bounds = layer_get_bounds(cell_layer);
-	graphics_context_set_text_color(ctx, GColorBlack);
-	graphics_draw_text(ctx, "Trebble", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), bounds, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+	// Splash-screen background, with the app name on the left edge and the detected
+	// location on the right. Until the lookup resolves, "Loading.." holds its place.
+	const char *location = detected_city[0] != '\0' ? detected_city : "Loading..";
+
+	graphics_context_set_fill_color(ctx, COLOR_FALLBACK(BG_COLOR, GColorBlack));
+	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+
+	// Both texts share the band; each gets half the width so a long location cannot
+	// run into the name. Text is white for contrast on the colored band.
+	graphics_context_set_text_color(ctx, GColorWhite);
+	int16_t pad = 4;
+	int16_t half = bounds.size.w / 2;
+	int16_t text_y = bounds.origin.y + 2;
+	int16_t text_h = bounds.size.h - 2;
+
+	graphics_draw_text(ctx, "Trebble", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+		GRect(bounds.origin.x + pad, text_y, half - pad, text_h),
+		GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+	graphics_draw_text(ctx, location, fonts_get_system_font(FONT_KEY_GOTHIC_14),
+		GRect(bounds.origin.x + half, text_y, half - pad, text_h),
+		GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
 }
 
 int16_t home_menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
@@ -284,9 +318,52 @@ static void home_destroy_ui(void)
 	}
 }
 
+// Stores the city sent back from the JS component and redraws the header. A late
+// response is fine: the menu reloads if it is still built. An empty label means
+// the lookup could not resolve a known city, in which case the last known city
+// is kept rather than reverting the header to its default.
+static void home_message_inbox(DictionaryIterator *iter, void *context)
+{
+	Tuple *city = dict_find(iter, MESSAGE_KEY_cityName);
+	if (!city) {
+		return;
+	}
+	// An empty cstring (length 1: just the terminator) means no known city.
+	if (city->length <= 1) {
+		APP_LOG(APP_LOG_LEVEL_INFO, "HomeWindow: City lookup returned no known city.");
+		return;
+	}
+	strncpy(detected_city, city->value->cstring, sizeof(detected_city) - 1);
+	detected_city[sizeof(detected_city) - 1] = '\0';
+	persist_write_string(PERSIST_KEY_CITY, detected_city);
+	if (homeMenuLayer) {
+		menu_layer_reload_data(homeMenuLayer);
+	}
+}
+
+// Asks the JS component to resolve the surrounding city. The reply arrives as a
+// cityName message handled by home_message_inbox.
+static void home_request_city(void)
+{
+	DictionaryIterator *iter;
+	if (app_message_outbox_begin(&iter) != APP_MSG_OK || iter == NULL) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "HomeWindow: could not begin city request.");
+		return;
+	}
+	dict_write_uint16(iter, MESSAGE_KEY_cityMessage, 1);
+	dict_write_end(iter);
+	app_message_outbox_send();
+}
+
 void home_window_load(Window *window)
 {
+	// Show the last known city straight away; a fresh lookup updates it below.
+	if (persist_exists(PERSIST_KEY_CITY)) {
+		persist_read_string(PERSIST_KEY_CITY, detected_city, sizeof(detected_city));
+	}
 	home_build_ui(window);
+	app_message_register_inbox_received(home_message_inbox);
+	home_request_city();
 }
 
 // Rebuild the UI if it was freed while another window was on top, and redraw so
@@ -294,6 +371,9 @@ void home_window_load(Window *window)
 void home_window_appear(Window *window)
 {
 	home_build_ui(window);
+	// Reclaim the AppMessage inbox from whichever window was on top, so a city
+	// reply (e.g. one still in flight) is handled here.
+	app_message_register_inbox_received(home_message_inbox);
 	if (homeMenuLayer) {
 		menu_layer_reload_data(homeMenuLayer);
 		// Restore the row the user left on before the menu was freed.
