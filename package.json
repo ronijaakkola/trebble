@@ -49,32 +49,8 @@
                     "type": "bitmap"
                 },
                 {
-                    "file": "images/bus-stop.png",
-                    "name": "IMAGE_BUS_STOP",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
                     "file": "images/error.png",
                     "name": "IMAGE_ERROR",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "images/bus.png",
-                    "name": "IMAGE_SPLASH",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "images/bus-icon.png",
-                    "name": "IMAGE_BUS_ICON",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "images/tram-icon.png",
-                    "name": "IMAGE_TRAM_ICON",
                     "targetPlatforms": null,
                     "type": "bitmap"
                 },
