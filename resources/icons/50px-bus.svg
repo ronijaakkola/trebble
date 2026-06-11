@@ -1,0 +1,22 @@
+<svg width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M42.5 5.5V33.6455L40.0732 38.5H9.92676L7.5 33.6455V5.5H42.5Z" fill="white" stroke="black" stroke-width="3"/>
+<path d="M17 39C17.5523 39 18 39.4477 18 40V44C18 44.5523 17.5523 45 17 45H12C11.4477 45 11 44.5523 11 44V40C11 39.4477 11.4477 39 12 39H17Z" fill="white" stroke="black" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M38 39C38.5523 39 39 39.4477 39 40V44C39 44.5523 38.5523 45 38 45H33C32.4477 45 32 44.5523 32 44V40C32 39.4477 32.4477 39 33 39H38Z" fill="white" stroke="black" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="9" y1="12" x2="41" y2="12" stroke="black" stroke-width="2"/>
+<line x1="9" y1="32" x2="41" y2="32" stroke="black" stroke-width="2"/>
+<line x1="9" y1="24" x2="41" y2="24" stroke="black" stroke-width="2"/>
+<path d="M21 35H29" stroke="black" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M19 9L31 9" stroke="black" stroke-width="2" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<mask id="path-9-inside-1_2020_225" fill="white">
+<path d="M43 12H45C45.5523 12 46 12.4477 46 13V20C46 20.5523 45.5523 21 45 21H43V12Z"/>
+</mask>
+<path d="M43 12H45C45.5523 12 46 12.4477 46 13V20C46 20.5523 45.5523 21 45 21H43V12Z" fill="white"/>
+<path d="M43 12H45C45.5523 12 46 12.4477 46 13V20C46 20.5523 45.5523 21 45 21H43V12Z" stroke="black" stroke-width="3" mask="url(#path-9-inside-1_2020_225)"/>
+<mask id="path-10-inside-2_2020_225" fill="white">
+<path d="M7 12H5C4.44772 12 4 12.4477 4 13V20C4 20.5523 4.44772 21 5 21H7V12Z"/>
+</mask>
+<path d="M7 12H5C4.44772 12 4 12.4477 4 13V20C4 20.5523 4.44772 21 5 21H7V12Z" fill="white"/>
+<path d="M7 12H5C4.44772 12 4 12.4477 4 13V20C4 20.5523 4.44772 21 5 21H7V12Z" stroke="black" stroke-width="3" mask="url(#path-10-inside-2_2020_225)"/>
+<path d="M8 29H16C16.5523 29 17 28.5523 17 28V24" stroke="black" stroke-width="2"/>
+<path d="M42 29H34C33.4477 29 33 28.5523 33 28V24" stroke="black" stroke-width="2"/>
+</svg>

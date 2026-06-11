@@ -113,6 +113,12 @@
                     "name": "IMAGE_TRAM",
                     "targetPlatforms": null,
                     "type": "raw"
+                },
+                {
+                    "file": "icons/50px-bus.pdc",
+                    "name": "IMAGE_SPLASH_BUS",
+                    "targetPlatforms": null,
+                    "type": "raw"
                 }
             ]
         },
