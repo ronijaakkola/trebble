@@ -42,6 +42,13 @@
         "resources": {
             "media": [
                 {
+                    "file": "icons/bus-menu-icon.png",
+                    "menuIcon": true,
+                    "name": "IMAGE_MENU_ICON",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
                     "file": "images/bus-stop.png",
                     "name": "IMAGE_BUS_STOP",
                     "targetPlatforms": null,
