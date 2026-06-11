@@ -1,21 +1,17 @@
-![trebble](https://github.com/ronijaakkola/trebble/blob/master/screenshots/banner.png)
-
-# NOTE
-If you have not heard the news, [Pebble is back](https://repebble.com/)! To celebrate that, this project will be soon be updated back to working order. 
+![Vuoro](https://github.com/ronijaakkola/trebble/blob/master/screenshots/banner.png)
 
 # About
-Trebble is a Pebble smart watch app for finding the next departing busses in Tampere, Finland. It uses GPS location to find your nearest stops and shows the next lines departing from those stops. This source supports all currently available Pebble models, including the latest Pebble 2 which was the last Pebble smart watch released before Fitbit acquired Pebble.
+Vuoro is a Pebble smart watch app for finding the next departing public transport from stops near you in Finland. It uses your phone's GPS to locate your nearest stops and shows the next lines departing from them. Vuoro works across the Finnish cities served by the Digitransit feeds — including Helsinki and Tampere (buses and trams) and bus networks in many other cities such as Jyväskylä, Kuopio, Lahti, Joensuu, Lappeenranta and more. The detected city is shown in the menu header. This source supports all currently available Pebble models, including the Pebble 2 which was the last Pebble smart watch released before Fitbit acquired Pebble.
 
 # Features
 **Find nearby stops**
 
-Trebble uses your phone's GPS to locate the nearest bus stops for you. Trebble automatically finds 10 most nearest stops. In the stop view the stops are shown in order from nearest to farthest. The stop name is shown as well as the distance to the stop. Since the GPS accuracy can vary between locations and phone models, it is important to show the distance to the user so he can determine the corresponding stop.
+Vuoro uses your phone's GPS to locate the nearest stops for you, listing the closest ones in order from nearest to farthest. Each stop shows its name and the distance to it, so you can tell stops apart even when GPS accuracy varies between locations and phone models. Bus and tram stops are marked with mode icons, and zone information is shown where available.
 
 **See the next departing lines**
 
-When the stop is chosen, Trebble shows the next departing lines from that stop. By default, Trebble shows the next ten departing lines. From a particular line, the line number and destination is shown. Most importantly, the departure time is shown for each line. Note! Trebble does not use the real time data provided by the Tampere bus API. Because of this it is possible, that the departure times are not always accurate.
+When you choose a stop, Vuoro shows the next departing lines from it. For each line the line number, destination and departure time are shown. Departures use the operator's real-time predictions when they are available, falling back to the scheduled time otherwise.
 
-# Known issues
-**Times are sometimes incorrect during night time**
+**Pin your favourite stops**
 
-Some users have reported that bus departure times can be incorrect during night time. For example, 01:00 (AM) can show as 25:00. This is a bug in the Tampere bus API which has been reported to the API maintainer.
+You can pin the stops you use most so they are always one tap away, without having to rely on GPS to find them again. Long-press a nearby stop to add it to your pinned stops list.
