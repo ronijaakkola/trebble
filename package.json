@@ -99,6 +99,12 @@
                     "type": "raw"
                 },
                 {
+                    "file": "icons/25px-subway.pdc",
+                    "name": "IMAGE_SUBWAY",
+                    "targetPlatforms": null,
+                    "type": "raw"
+                },
+                {
                     "file": "icons/50px-bus.pdc",
                     "name": "IMAGE_SPLASH_BUS",
                     "targetPlatforms": null,

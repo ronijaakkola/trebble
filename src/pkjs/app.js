@@ -13,9 +13,14 @@ var geolocationOptions = {
 // debugCity to test a different region (menu header city, stop colors, etc.).
 var debugLocations = {
   tampere: [61.50048576694305, 23.785473194189514],
-  helsinki: [60.1699, 24.9384],
+  // Hakaniemi metro entrance: centred on the metro stop so it ranks first, with
+  // Hakaniemi's trams and buses just outside — every supported mode shows up in
+  // the nearby list at once, handy for testing and store screenshots. (Unlike the
+  // central railway station, there is no big cluster of filtered-out RAIL stops
+  // here to crowd the metro out of the nearest results.)
+  helsinki: [60.18048, 24.95017],
 };
-var debugCity = "tampere";
+var debugCity = "helsinki";
 var debugLocation = debugLocations[debugCity];
 
 // The emulator reports its model as "qemu_platform_<platform>"; real hardware
@@ -60,10 +65,10 @@ function cityFromGtfsId(gtfsId) {
   return feedToCity[feed] || "";
 }
 
-// The watch only renders buses and trams (icons, badges, colors); every other
-// mode is filtered out here so unsupported types never reach it.
+// The watch only renders buses, trams and the metro (icons, badges, colors);
+// every other mode is filtered out here so unsupported types never reach it.
 function isSupportedMode(mode) {
-  return mode === "BUS" || mode === "TRAM";
+  return mode === "BUS" || mode === "TRAM" || mode === "SUBWAY";
 }
 
 // Stop search parameters
@@ -312,8 +317,8 @@ function getDepartingLines(stopCode, mode) {
           var stop = response.data.stop;
           var stoptimes = stop.stoptimesWithoutPatterns;
 
-          // Drop departures of unsupported modes (only buses and trams render on
-          // the watch) before paging, so the window and the "show later" cursor
+          // Drop departures of unsupported modes (only buses, trams and the metro
+          // render on the watch) before paging, so the window and the "show later" cursor
           // are computed from what the watch will actually show.
           if (stoptimes) {
             stoptimes = stoptimes.filter(function (st) {
@@ -425,7 +430,7 @@ function getPinnedStops(codes, lat, lon) {
     var stops = response.data.stops
       .filter(function (stop) {
         // Unknown ids come back as null; drop them. Also drop any pinned stop
-        // whose mode the watch cannot render (only buses and trams).
+        // whose mode the watch cannot render (only buses, trams and the metro).
         return stop != null && isSupportedMode(stop.vehicleMode);
       })
       .map(function (stop) {

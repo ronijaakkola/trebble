@@ -42,6 +42,24 @@ static const struct {
 	{ "Vaasa", { .argb = GColorDukeBlueARGB8 } },
 };
 
+void region_mode_to_type_letter(const char *mode, char *out)
+{
+	if (strcmp(mode, "BUS") == 0) {
+		out[0] = 'B';
+	}
+	else if (strcmp(mode, "TRAM") == 0) {
+		out[0] = 'T';
+	}
+	else if (strcmp(mode, "SUBWAY") == 0) {
+		out[0] = 'M';
+	}
+	else {
+		out[0] = '\0';
+		return;
+	}
+	out[1] = '\0';
+}
+
 GColor region_mode_color(const char *gtfs_id, char type)
 {
 	if (type == 'B') {
@@ -58,6 +76,11 @@ GColor region_mode_color(const char *gtfs_id, char type)
 		// GColorJaegerGreen is HSL's tram green (#00985f) snapped to the 64-color
 		// palette.
 		return feed_is(gtfs_id, "HSL") ? GColorJaegerGreen : GColorRed;
+	}
+	if (type == 'M') {
+		// Metro/subway. In Finland only Helsinki (HSL) has one, branded orange, but
+		// red reads cleanly on the watch and is what we use everywhere a subway shows.
+		return GColorRed;
 	}
 	// Unknown mode: neutral so any letter/text on top stays readable.
 	return GColorBlack;

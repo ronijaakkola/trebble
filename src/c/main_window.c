@@ -17,6 +17,7 @@ static TextLayer *titleLayer;
 // per row to the mode color. Loaded with the window's other layers.
 static GDrawCommandImage *busIcon;
 static GDrawCommandImage *tramIcon;
+static GDrawCommandImage *subwayIcon;
 
 // Recolors every command in a PDC image, used to tint the line-art mode icons to
 // the mode color before drawing. Mirrors home_window.c's helper.
@@ -58,23 +59,6 @@ static void main_set_loading(bool loading)
 	layer_set_hidden(text_layer_get_layer(titleLayer), !loading);
 }
 
-// Maps a Digitransit vehicle mode string to a single-letter type indicator.
-// Unknown modes produce an empty string so no icon is shown.
-static void mode_to_type_letter(const char *mode, char *out)
-{
-	if (strcmp(mode, "BUS") == 0) {
-		out[0] = 'B';
-		out[1] = '\0';
-	}
-	else if (strcmp(mode, "TRAM") == 0) {
-		out[0] = 'T';
-		out[1] = '\0';
-	}
-	else {
-		out[0] = '\0';
-	}
-}
-
 static void process_stop_tuple(Tuple *t)
 {
 	uint32_t key = t->key;
@@ -91,7 +75,7 @@ static void process_stop_tuple(Tuple *t)
 		stops[stop_index].dist = t->value->int32;
 	}
 	else if (key == MESSAGE_KEY_stopMode) {
-		mode_to_type_letter(t->value->cstring, stops[stop_index].type);
+		region_mode_to_type_letter(t->value->cstring, stops[stop_index].type);
 	}
 	else if (key == MESSAGE_KEY_stopMessage) {
 		// Per-stop marker; the index bookkeeping happens in the inbox handler.
@@ -258,7 +242,8 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	int16_t icon_left = 8;
 	int16_t text_x = icon_left;
 	GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon
-		: stop->type[0] == 'T' ? tramIcon : NULL;
+		: stop->type[0] == 'T' ? tramIcon
+		: stop->type[0] == 'M' ? subwayIcon : NULL;
 	if (icon) {
 		pdc_set_colors(icon, GColorBlack, GColorWhite);
 		GSize isize = gdraw_command_image_get_bounds_size(icon);
@@ -298,7 +283,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 	const int16_t badge_size = 16;
 	const int16_t gap = 5;
-	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T' || stop->type[0] == 'M');
 	int16_t total = dsz.w + (has_badge ? badge_size + gap : 0);
 	int16_t x = (bounds.size.w - total) / 2;
 	int16_t by = cy + 3;
@@ -328,7 +313,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	GColor bg = COLOR_FALLBACK(MENU_HL_COLOR, GColorBlack);
 
 	// Type badge on the left, vertically centered: a small rounded rectangle with a
-	// white letter (B for bus, T for tram). The badge is drawn AFTER the name (in
+	// white letter (B for bus, T for tram, M for metro). The badge is drawn AFTER the name (in
 	// the gutter the name is nudged right to clear) so the scrolling name slides
 	// under it. On color watches it is colored by type and stays colored when
 	// selected; on B&W watches the black badge inverts to a white badge with a
@@ -336,7 +321,7 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	int16_t cy = bounds.size.h / 2;
 	int16_t text_x = 8;
 	const int16_t badge_size = 18;
-	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T' || stop->type[0] == 'M');
 	if (has_badge) {
 		text_x = 6 + badge_size + 8;
 	}
@@ -472,6 +457,7 @@ static void main_build_ui(Window *window)
 #ifdef PBL_PLATFORM_EMERY
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+	subwayIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_SUBWAY);
 #endif
 
 	statusLayer = status_bar_layer_create();
@@ -516,6 +502,10 @@ static void main_destroy_ui(void)
 	if (tramIcon) {
 		gdraw_command_image_destroy(tramIcon);
 		tramIcon = NULL;
+	}
+	if (subwayIcon) {
+		gdraw_command_image_destroy(subwayIcon);
+		subwayIcon = NULL;
 	}
 #endif
 }

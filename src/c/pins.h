@@ -11,7 +11,7 @@
 struct PinnedStop {
 	char code[20];
 	char name[30];
-	char type[2]; // 'B', 'T' or '\0' (unknown), matching StopInfo.type
+	char type[2]; // 'B', 'T', 'M' or '\0' (unknown), matching StopInfo.type
 };
 
 // Loads the persisted pins into memory. Call once at startup.

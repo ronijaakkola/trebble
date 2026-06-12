@@ -25,7 +25,7 @@ static TextLayer *titleLayer;
 
 static char stopCode[20];
 char stopName[30];
-// The stop's vehicle mode ('B', 'T' or '\0' unknown), used to color the header
+// The stop's vehicle mode ('B', 'T', 'M' or '\0' unknown), used to color the header
 // bar and its type badge, and to tag a pin created from this screen.
 static char stopType;
 // The stop's fare zone (e.g. "A"), shown as a badge on the status bar. Empty
@@ -44,6 +44,7 @@ static struct LineInfo lines[NUM_LINES];
 // window's other layers. Emery and the round display both show it in the header.
 static GDrawCommandImage *busIcon;
 static GDrawCommandImage *tramIcon;
+static GDrawCommandImage *subwayIcon;
 
 // Recolors every command in a PDC image, used to tint the line-art mode icon
 // white for the colored header tile. Mirrors home_window.c's helper.
@@ -153,23 +154,6 @@ static void lines_show_no_more(void)
 }
 #endif // SHOW_LATER_ENABLED
 
-// Maps a Digitransit vehicle mode string to a single-letter type indicator.
-// Unknown modes produce an empty string so nothing is shown.
-static void mode_to_type_letter(const char *mode, char *out)
-{
-	if (strcmp(mode, "BUS") == 0) {
-		out[0] = 'B';
-		out[1] = '\0';
-	}
-	else if (strcmp(mode, "TRAM") == 0) {
-		out[0] = 'T';
-		out[1] = '\0';
-	}
-	else {
-		out[0] = '\0';
-	}
-}
-
 static void process_line_tuple(Tuple *t)
 {
 	uint16_t key = t->key;
@@ -188,7 +172,7 @@ static void process_line_tuple(Tuple *t)
 	}
 	else if (key == MESSAGE_KEY_lineMode) {
 		// Optional field, so it does not gate completion of a line.
-		mode_to_type_letter(t->value->cstring, lines[line_index].type);
+		region_mode_to_type_letter(t->value->cstring, lines[line_index].type);
 	}
 	else if (key == MESSAGE_KEY_lineRealtime) {
 		// Optional field, so it does not gate completion of a line.
@@ -415,14 +399,14 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	// color carries no meaning there. Stacking the icon above the name (rather than
 	// beside it) lets the name use the bar's full width.
 	{
-	bool colored = (stopType == 'B' || stopType == 'T');
+	bool colored = (stopType == 'B' || stopType == 'T' || stopType == 'M');
 	GColor fg = colored ? GColorWhite : GColorBlack;
 	GColor bar = colored ? (stopType == 'B' ? GColorCobaltBlue : GColorRed) : GColorWhite;
 	graphics_context_set_fill_color(ctx, bar);
 	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 
 	int16_t y = bounds.origin.y + 4;
-	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : NULL;
+	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : stopType == 'M' ? subwayIcon : NULL;
 	if (hicon) {
 		// The icon keeps its default look (black lines, white interior); it reads on
 		// either colored bar.
@@ -446,7 +430,7 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	// One row: mode icon, stop name, and the stop-code badge aligned to the right
 	// edge, all vertically centered in the bar. An unknown mode keeps a plain white
 	// bar with black text.
-	bool colored = (stopType == 'B' || stopType == 'T');
+	bool colored = (stopType == 'B' || stopType == 'T' || stopType == 'M');
 	GColor fg = colored ? GColorWhite : GColorBlack;
 	GColor bar = colored ? region_mode_color(stopCode, stopType) : GColorWhite;
 	graphics_context_set_fill_color(ctx, bar);
@@ -455,7 +439,7 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 	// Icon geometry, resolved up front so the name's left edge clears it. The icon
 	// itself is drawn after the name so the scrolling name slides under it.
 	int16_t hx = 5;
-	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : NULL;
+	GDrawCommandImage *hicon = stopType == 'B' ? busIcon : stopType == 'T' ? tramIcon : stopType == 'M' ? subwayIcon : NULL;
 	GSize hs = GSize(0, 0);
 	if (hicon) {
 		hs = gdraw_command_image_get_bounds_size(hicon);
@@ -500,11 +484,11 @@ void lines_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t
 #endif
 
 	// On color watches a known type tints the title bar (blue for bus, red for
-	// tram) with the stop name in white. B&W watches keep a plain white header with
+	// tram/metro) with the stop name in white. B&W watches keep a plain white header with
 	// black text, since the color carries no meaning there.
 	GColor text_color = GColorBlack;
 #ifdef PBL_COLOR
-	if (stopType == 'B' || stopType == 'T') {
+	if (stopType == 'B' || stopType == 'T' || stopType == 'M') {
 		graphics_context_set_fill_color(ctx, region_mode_color(stopCode, stopType));
 		graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 		text_color = GColorWhite;
@@ -793,7 +777,7 @@ void setup_lines_loading_layer(Layer *window_layer)
 	GColor title_bg = GColorClear;
 	GColor title_fg = GColorBlack;
 #ifdef PBL_COLOR
-	if (stopType == 'B' || stopType == 'T') {
+	if (stopType == 'B' || stopType == 'T' || stopType == 'M') {
 		title_bg = region_mode_color(stopCode, stopType);
 		title_fg = GColorWhite;
 	}
@@ -863,6 +847,7 @@ static void lines_build_ui(Window *window)
 #if defined(PBL_PLATFORM_EMERY) || defined(PBL_ROUND)
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+	subwayIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_SUBWAY);
 #endif
 
 	statusLayer = status_bar_layer_create();
@@ -913,6 +898,10 @@ static void lines_destroy_ui(void)
 	if (tramIcon) {
 		gdraw_command_image_destroy(tramIcon);
 		tramIcon = NULL;
+	}
+	if (subwayIcon) {
+		gdraw_command_image_destroy(subwayIcon);
+		subwayIcon = NULL;
 	}
 #endif
 }

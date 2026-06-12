@@ -5,6 +5,7 @@
 #include "lines_window.h"
 #include "error_window.h"
 #include "marquee.h"
+#include "region.h"   // region_mode_to_type_letter
 
 static Window *pinsWindow;
 static MenuLayer *pinsMenuLayer;
@@ -36,6 +37,7 @@ static uint16_t savedSelectedRow = 0;
 // of the letter badge. Loaded with the window's other layers.
 static GDrawCommandImage *busIcon;
 static GDrawCommandImage *tramIcon;
+static GDrawCommandImage *subwayIcon;
 
 // Recolors every command in a PDC image, used to draw the line-art mode icons in
 // their default look (black lines, white interior). Mirrors home_window.c.
@@ -84,22 +86,6 @@ static void pins_show_empty_state(void)
 	layer_set_hidden(text_layer_get_layer(guidanceLayer), false);
 }
 
-// Maps a Digitransit vehicle mode string to a single-letter type indicator.
-static void mode_to_type_letter(const char *mode, char *out)
-{
-	if (strcmp(mode, "BUS") == 0) {
-		out[0] = 'B';
-		out[1] = '\0';
-	}
-	else if (strcmp(mode, "TRAM") == 0) {
-		out[0] = 'T';
-		out[1] = '\0';
-	}
-	else {
-		out[0] = '\0';
-	}
-}
-
 static void process_pin_tuple(Tuple *t)
 {
 	uint32_t key = t->key;
@@ -116,7 +102,7 @@ static void process_pin_tuple(Tuple *t)
 		pinStops[pin_index].dist = t->value->int32;
 	}
 	else if (key == MESSAGE_KEY_pinMode) {
-		mode_to_type_letter(t->value->cstring, pinStops[pin_index].type);
+		region_mode_to_type_letter(t->value->cstring, pinStops[pin_index].type);
 	}
 	else if (key == MESSAGE_KEY_pinMessage) {
 		// Per-pin marker; index bookkeeping happens in the inbox handler.
@@ -263,7 +249,8 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	int16_t icon_left = 8;
 	int16_t text_x = icon_left;
 	GDrawCommandImage *icon = stop->type[0] == 'B' ? busIcon
-		: stop->type[0] == 'T' ? tramIcon : NULL;
+		: stop->type[0] == 'T' ? tramIcon
+		: stop->type[0] == 'M' ? subwayIcon : NULL;
 	if (icon) {
 		pdc_set_colors(icon, GColorBlack, GColorWhite);
 		GSize isize = gdraw_command_image_get_bounds_size(icon);
@@ -282,7 +269,7 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	{
 	// Round display: a centered mode badge over the centered stop name, so nothing
 	// is clipped by the circular bezel on the rows above and below the focused one.
-	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T' || stop->type[0] == 'M');
 	int16_t name_y = has_badge ? bounds.size.h / 2 - 3 : bounds.size.h / 2 - 13;
 
 	if (has_badge) {
@@ -314,7 +301,7 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	// using the distance computed by the JS component.
 	int16_t cy = bounds.size.h / 2;
 	const int16_t badge_size = 18;
-	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T');
+	bool has_badge = (stop->type[0] == 'B' || stop->type[0] == 'T' || stop->type[0] == 'M');
 	int16_t text_x = has_badge ? (6 + badge_size + 8) : 8;
 	int16_t text_w = bounds.size.w - text_x - 4;
 
@@ -323,7 +310,7 @@ void pins_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	marquee_draw_label(ctx, cell_layer, stop->name, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), text_color, GRect(text_x, cy - 13, text_w, 24), bg);
 
 	// Type badge on the left, mirroring the nearby stops list: a small rounded
-	// rectangle with a white letter (B for bus, T for tram). Drawn AFTER the name
+	// rectangle with a white letter (B for bus, T for tram, M for metro). Drawn AFTER the name
 	// so the scrolling title slides under it. On color watches it is colored by
 	// type and stays colored when selected; on B&W watches the black badge inverts
 	// to a white badge with a black letter on the solid-black selected row.
@@ -460,6 +447,7 @@ static void pins_build_ui(Window *window)
 #ifdef PBL_PLATFORM_EMERY
 	busIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BUS);
 	tramIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TRAM);
+	subwayIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_SUBWAY);
 #endif
 
 	statusLayer = status_bar_layer_create();
@@ -508,6 +496,10 @@ static void pins_destroy_ui(void)
 	if (tramIcon) {
 		gdraw_command_image_destroy(tramIcon);
 		tramIcon = NULL;
+	}
+	if (subwayIcon) {
+		gdraw_command_image_destroy(subwayIcon);
+		subwayIcon = NULL;
 	}
 #endif
 }

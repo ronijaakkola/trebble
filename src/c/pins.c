@@ -221,9 +221,10 @@ void pins_show_action_menu(const char *code, const char *name, const char *type,
 	ActionMenuConfig config = (ActionMenuConfig) {
 		.root_level = root,
 		.colors = {
-			// Match the stop type: red for tram, blue for bus (and unknown). B&W
-			// watches fall back to black, where the color carries no meaning.
-			.background = COLOR_FALLBACK(am_type[0] == 'T' ? GColorRed : GColorCobaltBlue, GColorBlack),
+			// Match the stop type: red for tram and metro, blue for bus (and
+			// unknown). B&W watches fall back to black, where the color carries no
+			// meaning.
+			.background = COLOR_FALLBACK((am_type[0] == 'T' || am_type[0] == 'M') ? GColorRed : GColorCobaltBlue, GColorBlack),
 			.foreground = GColorWhite,
 		},
 		.align = ActionMenuAlignCenter,
