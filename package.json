@@ -36,7 +36,9 @@
             "pinNoFound",
             "noInternet",
             "cityMessage",
-            "cityName"
+            "cityName",
+            "cityUnknown",
+            "jsReady"
         ],
         "projectType": "native",
         "resources": {

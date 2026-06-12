@@ -103,6 +103,14 @@ function sendNextItem(items, index) {
 }
 
 function sendList(items) {
+  // An empty list still needs a terminating messageEnd so the watch can leave its
+  // "Loading.." state and show an empty-state message. Without this, sendNextItem
+  // would try to transmit items[0] (undefined) and never reach the end marker,
+  // leaving the nearby-stops screen spinning forever when no stops are found.
+  if (items.length === 0) {
+    Pebble.sendAppMessage({ messageEnd: 1 });
+    return;
+  }
   var index = 0;
   sendNextItem(items, index);
 }
@@ -185,13 +193,26 @@ function getStopsFromLocation(pos) {
 }
 
 // Resolves the city the user is in from the feed prefix of the nearest stop and
-// sends it to the watch for the menu header. A failed lookup (no stops, network
-// error, unknown feed) sends an empty label rather than an error screen — the
-// header simply keeps its default.
+// sends it to the watch for the menu header. The watch distinguishes two "no
+// city" outcomes: a completed lookup that genuinely found no known city sends an
+// empty cityName (the header clears, so it stays up to date), while a lookup that
+// could not run at all (network/timeout/bad response) sends cityUnknown (the
+// header keeps its last known city rather than blanking it over a transient
+// hiccup). Neither surfaces the error screen used by the stops flow.
 function getCityFromLocation(pos) {
   var crd = pos.coords;
   var query = queries.createCityQuery(crd.latitude, crd.longitude);
   var req = createGraphQLRequest(url);
+
+  // These override the onerror/ontimeout set by createGraphQLRequest above.
+  req.onerror = function () {
+    console.log("JS: City lookup network error.");
+    Pebble.sendAppMessage({ cityUnknown: 1 });
+  };
+  req.ontimeout = function () {
+    console.log("JS: City lookup timed out.");
+    Pebble.sendAppMessage({ cityUnknown: 1 });
+  };
 
   req.onload = function () {
     if (req.readyState !== 4) {
@@ -199,6 +220,7 @@ function getCityFromLocation(pos) {
     }
     if (req.status !== 200 || req.responseText === "") {
       console.log("JS: City lookup returned no data. Status: " + req.status);
+      Pebble.sendAppMessage({ cityUnknown: 1 });
       return;
     }
 
@@ -209,6 +231,7 @@ function getCityFromLocation(pos) {
         : null;
     if (!edges) {
       console.log("JS: No valid city data in the GraphQL response.");
+      Pebble.sendAppMessage({ cityUnknown: 1 });
       return;
     }
 
@@ -231,8 +254,9 @@ function getCityFromLocation(pos) {
 }
 
 // Entry point for a cityMessage request: gets the user's location (debug
-// location in the emulator) and resolves the surrounding city. GPS failures are
-// swallowed — the header just keeps its default rather than showing an error.
+// location in the emulator) and resolves the surrounding city. A GPS failure
+// reports cityUnknown so the header keeps its last known city rather than showing
+// an error.
 function handleCityDetection() {
   if (debugLocation && isEmulator()) {
     console.log("JS: Emulator detected, using debug location for city.");
@@ -246,6 +270,10 @@ function handleCityDetection() {
     getCityFromLocation,
     function (err) {
       console.warn("JS: GPS error for city (" + err.code + "): " + err.message);
+      // Location is unavailable, so we cannot determine the city: keep the last
+      // known one (cityUnknown) rather than blanking the header, while still
+      // letting it stop showing "Loading..".
+      Pebble.sendAppMessage({ cityUnknown: 1 });
     },
     geolocationOptions
   );
@@ -469,6 +497,10 @@ function handlePinnedStops(csv) {
 
 Pebble.addEventListener("ready", function (e) {
   console.log("JS: Javascript component ready");
+  // Tell the watch the JS side is up so it can fire its startup city lookup now.
+  // A request sent before this point (e.g. straight from app init, while the
+  // splash shows) would be dropped because this component is not loaded yet.
+  Pebble.sendAppMessage({ jsReady: 1 });
 });
 
 function convertSecondsToTime(seconds) {

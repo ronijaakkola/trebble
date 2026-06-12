@@ -84,8 +84,15 @@ void init()
 	// Push first screen to the stack
 	window_stack_push(splash_window_get_window(), true);
 
-	// Timeout to show splash screen only for a limited time
-	app_timer_register(1500, open_home_screen, NULL);
+	// Start resolving the menu-header city now, while the splash is up, so its reply
+	// has time to land before the home menu appears (no visible "Loading.." → city
+	// swap). This never blocks the splash: the menu opens on the timer below
+	// regardless, and the header degrades on its own if the lookup is slow or fails.
+	home_window_start_location_lookup();
+
+	// Show the splash for a short minimum (long enough to read the wordmark) before
+	// revealing the home menu. The city lookup above runs concurrently.
+	app_timer_register(2000, open_home_screen, NULL);
 }
 
 void deinit()

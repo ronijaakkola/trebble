@@ -532,6 +532,10 @@ void main_window_load(Window *window)
 	// Request nearby stops from the JS component.
 	app_message_register_inbox_received(main_message_inbox);
 	stop_transfer_started = false;
+	// Reset the per-transfer index too: an empty result sends messageEnd with no
+	// stopMessage to reset it, so a stale count from a previous load would
+	// otherwise be read as the new stop total.
+	stop_index = 0;
 
 	DictionaryIterator *iter;
 	app_message_outbox_begin(&iter);

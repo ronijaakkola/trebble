@@ -28,6 +28,18 @@ static GBitmap *locationIcon; // small pin shown before the location label in th
 #define PERSIST_KEY_CITY 50
 static char detected_city[24] = "";
 
+// True once the city lookup has replied (with a city or an empty "unknown"). It
+// lets the header tell "still looking" apart from "looked, found nothing" so the
+// "Loading.." placeholder is dropped instead of spinning forever in regions with
+// no nearby stops, an unknown feed, or a GPS/network failure.
+static bool city_resolved = false;
+
+// True once the city request has actually been sent. The request is fired when
+// the JS component signals it is ready (jsReady), with a fallback send when the
+// home window loads in case that signal was missed; this guard keeps the two
+// paths from sending it twice.
+static bool city_requested = false;
+
 // Home menu items. Subtitle is optional; an empty subtitle renders a single
 // vertically centered title (like "Nearby stops"). Icons will be added later.
 struct HomeItem {
@@ -76,8 +88,15 @@ void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint
 	GRect bounds = layer_get_bounds(cell_layer);
 
 	// Splash-screen background, with the app name on the left edge and the detected
-	// location on the right. Until the lookup resolves, "Loading.." holds its place.
-	const char *location = detected_city[0] != '\0' ? detected_city : "Loading..";
+	// location on the right. Until the lookup resolves, "Loading.." holds its place;
+	// once it resolves without a known city the label is dropped (leaving just the
+	// app name) rather than showing "Loading.." forever.
+	const char *location = NULL;
+	if (detected_city[0] != '\0') {
+		location = detected_city;
+	} else if (!city_resolved) {
+		location = "Loading..";
+	}
 
 	graphics_context_set_fill_color(ctx, COLOR_FALLBACK(BG_COLOR, GColorBlack));
 	graphics_fill_rect(ctx, bounds, 0, GCornerNone);
@@ -93,6 +112,12 @@ void home_menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint
 	graphics_draw_text(ctx, "Vuoro", fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
 		GRect(bounds.origin.x + pad, text_y, half - pad, text_h),
 		GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+
+	// Nothing more to draw once the lookup has resolved without a known city: the
+	// header is just the app name.
+	if (!location) {
+		return;
+	}
 
 	// Right side: the location label pinned to the right edge, preceded by a small
 	// location pin. Measure the label first so the icon can sit immediately to its
@@ -346,24 +371,56 @@ static void home_destroy_ui(void)
 	}
 }
 
-// Stores the city sent back from the JS component and redraws the header. A late
-// response is fine: the menu reloads if it is still built. An empty label means
-// the lookup could not resolve a known city, in which case the last known city
-// is kept rather than reverting the header to its default.
+static void home_request_city(void);
+
+// Handles the JS replies that drive the menu header: jsReady (fire the request),
+// cityUnknown (lookup failed — keep the last known city), and cityName (the
+// authoritative result — show it, or clear the header if it came back empty). A
+// late response is fine: the menu reloads if it is still built.
 static void home_message_inbox(DictionaryIterator *iter, void *context)
 {
+	// The JS component just came up. This is the earliest point it can serve a
+	// request, so fire the startup city lookup now (unless it already went out).
+	if (dict_find(iter, MESSAGE_KEY_jsReady)) {
+		if (!city_requested) {
+			home_request_city();
+		}
+		return;
+	}
+
+	// The lookup could not run (no network, timed out, GPS unavailable, bad
+	// response). We genuinely don't know the city, so keep the last known one
+	// rather than blanking it over a transient failure — but mark it resolved so
+	// the header stops showing "Loading.." (it falls back to just the app name if
+	// there was no last known city).
+	if (dict_find(iter, MESSAGE_KEY_cityUnknown)) {
+		APP_LOG(APP_LOG_LEVEL_INFO, "HomeWindow: City lookup could not determine a city.");
+		city_resolved = true;
+		if (homeMenuLayer) {
+			menu_layer_reload_data(homeMenuLayer);
+		}
+		return;
+	}
+
 	Tuple *city = dict_find(iter, MESSAGE_KEY_cityName);
 	if (!city) {
 		return;
 	}
-	// An empty cstring (length 1: just the terminator) means no known city.
-	if (city->length <= 1) {
-		APP_LOG(APP_LOG_LEVEL_INFO, "HomeWindow: City lookup returned no known city.");
-		return;
+	// A cityName reply means the lookup completed, so the header should stop showing
+	// "Loading..". Unlike cityUnknown above, this is an authoritative answer: an
+	// empty cstring (length 1: just the terminator) means the lookup ran and found
+	// no known city here, so clear the stale last known city (and its persisted
+	// copy) to keep the header up to date rather than clinging to a previous one.
+	city_resolved = true;
+	if (city->length > 1) {
+		strncpy(detected_city, city->value->cstring, sizeof(detected_city) - 1);
+		detected_city[sizeof(detected_city) - 1] = '\0';
+		persist_write_string(PERSIST_KEY_CITY, detected_city);
+	} else {
+		APP_LOG(APP_LOG_LEVEL_INFO, "HomeWindow: City lookup found no known city here.");
+		detected_city[0] = '\0';
+		persist_delete(PERSIST_KEY_CITY);
 	}
-	strncpy(detected_city, city->value->cstring, sizeof(detected_city) - 1);
-	detected_city[sizeof(detected_city) - 1] = '\0';
-	persist_write_string(PERSIST_KEY_CITY, detected_city);
 	if (homeMenuLayer) {
 		menu_layer_reload_data(homeMenuLayer);
 	}
@@ -381,17 +438,40 @@ static void home_request_city(void)
 	dict_write_uint16(iter, MESSAGE_KEY_cityMessage, 1);
 	dict_write_end(iter);
 	app_message_outbox_send();
+	city_requested = true;
+}
+
+// Prepares the city lookup before the home window exists (called from init while
+// the splash is up). It loads the last known city and registers the inbox handler
+// so it can catch the JS component's jsReady signal, which is what actually fires
+// the request — sending it from here would be too early (the JS side is not
+// loaded yet) and the message would be dropped. Doing this during the splash gives
+// the reply time to arrive before the menu paints, so the header is usually
+// already final instead of swapping from "Loading.." to the city a moment later.
+void home_window_start_location_lookup()
+{
+	// Show the last known city straight away; the fresh lookup updates it.
+	if (persist_exists(PERSIST_KEY_CITY)) {
+		persist_read_string(PERSIST_KEY_CITY, detected_city, sizeof(detected_city));
+	}
+	// A fresh lookup is pending; the header shows "Loading.." until it replies
+	// (unless a last known city is already on screen).
+	city_resolved = false;
+	app_message_register_inbox_received(home_message_inbox);
 }
 
 void home_window_load(Window *window)
 {
-	// Show the last known city straight away; a fresh lookup updates it below.
-	if (persist_exists(PERSIST_KEY_CITY)) {
-		persist_read_string(PERSIST_KEY_CITY, detected_city, sizeof(detected_city));
-	}
+	// The city lookup was prepared during the splash (see
+	// home_window_start_location_lookup); detected_city/city_resolved hold its
+	// result-so-far, so the menu paints with the right header straight away.
 	home_build_ui(window);
 	app_message_register_inbox_received(home_message_inbox);
-	home_request_city();
+	// Fallback: if the JS jsReady signal was missed (so the request never went
+	// out), send it now that the home window is up — matching the original timing.
+	if (!city_requested) {
+		home_request_city();
+	}
 }
 
 // Rebuild the UI if it was freed while another window was on top, and redraw so
