@@ -101,7 +101,7 @@ echo
 # one bullet per commit, and prints the same commit list so the skill can curate
 # the short, user-facing store changelog from it (see SKILL.md). Runs even with
 # --no-shots.
-echo "==> Compiling changelog for v$VERSION…"
+echo "==> Compiling changelog for v${VERSION}…"
 
 SINCE_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 if [[ -n "$SINCE_TAG" ]]; then
