@@ -1,130 +1,130 @@
 {
-    "author": "Roni Jaakkola",
-    "dependencies": {},
-    "keywords": [],
-    "name": "trebble",
-    "pebble": {
-        "displayName": "Vuoro",
-        "enableMultiJS": true,
-        "messageKeys": [
-            "stopMessage",
-            "stopCode",
-            "stopShortCode",
-            "stopName",
-            "stopDist",
-            "stopMode",
-            "stopZone",
-            "messageEnd",
-            "stopNoFound",
-            "lineMessage",
-            "lineRefresh",
-            "lineMore",
-            "lineNoMore",
-            "lineCode",
-            "lineTime",
-            "lineNoFound",
-            "noGps",
-            "lineDir",
-            "lineMode",
-            "lineRealtime",
-            "lineMins",
-            "pinMessage",
-            "pinCode",
-            "pinName",
-            "pinDist",
-            "pinMode",
-            "pinNoFound",
-            "noInternet",
-            "cityMessage",
-            "cityName",
-            "cityUnknown",
-            "jsReady",
-            "screenshotMode"
-        ],
-        "projectType": "native",
-        "resources": {
-            "media": [
-                {
-                    "file": "icons/bus-menu-icon.png",
-                    "menuIcon": true,
-                    "name": "IMAGE_MENU_ICON",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "images/error.png",
-                    "name": "IMAGE_ERROR",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "icons/10px-location.png",
-                    "name": "IMAGE_LOCATION",
-                    "targetPlatforms": null,
-                    "type": "bitmap"
-                },
-                {
-                    "file": "icons/80px-icon-no-phone-connection.pdc",
-                    "name": "IMAGE_NO_PHONE_CONNECTION",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/80px-icon-no-internet-connection.pdc",
-                    "name": "IMAGE_NO_INTERNET_CONNECTION",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/25px-stop.pdc",
-                    "name": "IMAGE_STOP",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/25px-timeline-pin.pdc",
-                    "name": "IMAGE_TIMELINE_PIN",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/25px-bus.pdc",
-                    "name": "IMAGE_BUS",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/25px-tram.pdc",
-                    "name": "IMAGE_TRAM",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/25px-subway.pdc",
-                    "name": "IMAGE_SUBWAY",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                },
-                {
-                    "file": "icons/50px-bus.pdc",
-                    "name": "IMAGE_SPLASH_BUS",
-                    "targetPlatforms": null,
-                    "type": "raw"
-                }
-            ]
+  "author": "Roni Jaakkola",
+  "dependencies": {},
+  "keywords": [],
+  "name": "trebble",
+  "pebble": {
+    "displayName": "Vuoro",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "stopMessage",
+      "stopCode",
+      "stopShortCode",
+      "stopName",
+      "stopDist",
+      "stopMode",
+      "stopZone",
+      "messageEnd",
+      "stopNoFound",
+      "lineMessage",
+      "lineRefresh",
+      "lineMore",
+      "lineNoMore",
+      "lineCode",
+      "lineTime",
+      "lineNoFound",
+      "noGps",
+      "lineDir",
+      "lineMode",
+      "lineRealtime",
+      "lineMins",
+      "pinMessage",
+      "pinCode",
+      "pinName",
+      "pinDist",
+      "pinMode",
+      "pinNoFound",
+      "noInternet",
+      "cityMessage",
+      "cityName",
+      "cityUnknown",
+      "jsReady",
+      "screenshotMode"
+    ],
+    "projectType": "native",
+    "resources": {
+      "media": [
+        {
+          "file": "icons/bus-menu-icon.png",
+          "menuIcon": true,
+          "name": "IMAGE_MENU_ICON",
+          "targetPlatforms": null,
+          "type": "bitmap"
         },
-        "sdkVersion": "3",
-        "targetPlatforms": [
-            "aplite",
-            "basalt",
-            "chalk",
-            "diorite",
-            "emery"
-        ],
-        "uuid": "77f91099-2bf9-4fe0-b49c-8b3e1a496ad7",
-        "watchapp": {
-            "watchface": false
+        {
+          "file": "images/error.png",
+          "name": "IMAGE_ERROR",
+          "targetPlatforms": null,
+          "type": "bitmap"
+        },
+        {
+          "file": "icons/10px-location.png",
+          "name": "IMAGE_LOCATION",
+          "targetPlatforms": null,
+          "type": "bitmap"
+        },
+        {
+          "file": "icons/80px-icon-no-phone-connection.pdc",
+          "name": "IMAGE_NO_PHONE_CONNECTION",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/80px-icon-no-internet-connection.pdc",
+          "name": "IMAGE_NO_INTERNET_CONNECTION",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/25px-stop.pdc",
+          "name": "IMAGE_STOP",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/25px-timeline-pin.pdc",
+          "name": "IMAGE_TIMELINE_PIN",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/25px-bus.pdc",
+          "name": "IMAGE_BUS",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/25px-tram.pdc",
+          "name": "IMAGE_TRAM",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/25px-subway.pdc",
+          "name": "IMAGE_SUBWAY",
+          "targetPlatforms": null,
+          "type": "raw"
+        },
+        {
+          "file": "icons/50px-bus.pdc",
+          "name": "IMAGE_SPLASH_BUS",
+          "targetPlatforms": null,
+          "type": "raw"
         }
+      ]
     },
-    "version": "2.0.0"
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "uuid": "77f91099-2bf9-4fe0-b49c-8b3e1a496ad7",
+    "watchapp": {
+      "watchface": false
+    }
+  },
+  "version": "2.1.0"
 }
