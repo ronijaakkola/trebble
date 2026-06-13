@@ -1,7 +1,16 @@
 const secrets = require("./secrets");
 const queries = require("./queries");
+const fixtures = require("./fixtures");
 
 var url = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1";
+
+// Screenshot mode: deterministic Helsinki fixtures instead of live API calls, so
+// every release produces identical app-store / README screenshots. It is latched
+// on by a `screenshotMode` flag the watch sends (only in SCREENSHOT_MODE builds —
+// see the release-build skill) and stays on for the rest of the JS process, so all
+// four data screens are served from fixtures.js. Off in normal builds: the watch
+// never sends the flag, so this whole path is dead and the live API is used.
+var screenshotActive = false;
 
 var geolocationOptions = {
   enableHighAccuracy: true,
@@ -384,6 +393,19 @@ function getDepartingLines(stopCode, mode) {
   req.send(query);
 }
 
+// Screenshot mode: send the deterministic fixture departures for a stop instead
+// of querying the API. A "more" (Show later) request has no further fixture
+// window, so it reports lineNoMore — exactly like the live path with nothing more
+// to show — leaving the current list in place.
+function sendFixtureDepartures(stopCode, mode) {
+  if (mode === "more") {
+    Pebble.sendAppMessage({ lineNoMore: 1 });
+    return;
+  }
+  var dep = fixtures.departuresFor(stopCode);
+  sendList([{ stopZone: dep.stopZone, stopShortCode: dep.stopShortCode }].concat(dep.lines));
+}
+
 // Great-circle distance in whole meters between two lat/lon points.
 function distanceMeters(lat1, lon1, lat2, lon2) {
   var R = 6371000;
@@ -532,8 +554,20 @@ function minutesUntilDeparture(serviceDay, departureSecs) {
 }
 
 Pebble.addEventListener("appmessage", function (e) {
+  // The watch tags its requests with screenshotMode in SCREENSHOT_MODE builds.
+  // Latch it on first sight; it stays on for the rest of the JS process so every
+  // data screen is served from fixtures (see screenshotActive above).
+  if (e.payload.screenshotMode) {
+    screenshotActive = true;
+  }
+
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
+    if (screenshotActive) {
+      console.log("JS: Screenshot mode, sending fixture nearby stops.");
+      sendList(fixtures.NEARBY_STOPS);
+      return;
+    }
     if (debugLocation && isEmulator()) {
       console.log("JS: Emulator detected, using debug location: " + debugLocation);
       getStopsFromLocation({
@@ -553,22 +587,44 @@ Pebble.addEventListener("appmessage", function (e) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
     );
+    if (screenshotActive) {
+      sendFixtureDepartures(e.payload.lineMessage, "load");
+      return;
+    }
     getDepartingLines(e.payload.lineMessage, "load");
   } else if (e.payload.lineRefresh) {
     console.log(
       "JS: Received lineRefresh with stopCode: " + e.payload.lineRefresh
     );
+    if (screenshotActive) {
+      sendFixtureDepartures(e.payload.lineRefresh, "refresh");
+      return;
+    }
     getDepartingLines(e.payload.lineRefresh, "refresh");
   } else if (e.payload.lineMore) {
     console.log(
       "JS: Received lineMore with stopCode: " + e.payload.lineMore
     );
+    if (screenshotActive) {
+      sendFixtureDepartures(e.payload.lineMore, "more");
+      return;
+    }
     getDepartingLines(e.payload.lineMore, "more");
   } else if (e.payload.cityMessage) {
     console.log("JS: Received cityMessage.");
+    if (screenshotActive) {
+      console.log("JS: Screenshot mode, sending fixture city.");
+      Pebble.sendAppMessage({ cityName: fixtures.CITY });
+      return;
+    }
     handleCityDetection();
   } else if (typeof e.payload.pinMessage !== "undefined") {
     console.log("JS: Received pinMessage with codes: " + e.payload.pinMessage);
+    if (screenshotActive) {
+      console.log("JS: Screenshot mode, sending fixture pinned stops.");
+      sendList(fixtures.PINNED_STOPS);
+      return;
+    }
     handlePinnedStops(e.payload.pinMessage);
   } else {
     console.log("JS: Received unknown message from Pebble!");

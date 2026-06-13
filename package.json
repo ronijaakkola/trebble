@@ -38,7 +38,8 @@
             "cityMessage",
             "cityName",
             "cityUnknown",
-            "jsReady"
+            "jsReady",
+            "screenshotMode"
         ],
         "projectType": "native",
         "resources": {

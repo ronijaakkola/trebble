@@ -17,6 +17,13 @@ struct PinnedStop {
 // Loads the persisted pins into memory. Call once at startup.
 void pins_load(void);
 
+#ifdef SCREENSHOT_MODE
+// Seeds four stub pins so the home-menu count reads 4 and the pinned-stops window
+// fires its request; the phone fills the actual list from PINNED_STOPS in
+// fixtures.js. Compiled in only for screenshot builds; never shipped.
+void pins_seed_fixtures(void);
+#endif
+
 // Number of stops currently pinned.
 int pins_count(void);
 

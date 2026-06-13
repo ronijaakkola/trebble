@@ -35,9 +35,17 @@ def build(ctx):
     build_worker = os.path.exists('worker_src')
     binaries = []
 
+    # Screenshot builds (TREBBLE_SCREENSHOT=1) define SCREENSHOT_MODE, which gates
+    # the watch-side fixture code (pin seeding + the JS handshake). Off by default,
+    # so release/production builds carry none of it — important for aplite's tiny
+    # heap. Always pair this with a `pebble clean` so the flag actually takes.
+    screenshot_mode = os.environ.get('TREBBLE_SCREENSHOT') == '1'
+
     for p in ctx.env.TARGET_PLATFORMS:
         ctx.set_env(ctx.all_envs[p])
         ctx.set_group(ctx.env.PLATFORM_NAME)
+        if screenshot_mode:
+            ctx.env.append_value('DEFINES', 'SCREENSHOT_MODE')
         app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
         ctx.pbl_program(source=ctx.path.ant_glob('src/c/**/*.c'), target=app_elf)
 

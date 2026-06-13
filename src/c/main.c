@@ -67,6 +67,13 @@ void init()
 	// Load persisted pins before any window that reads them is shown.
 	pins_load();
 
+#ifdef SCREENSHOT_MODE
+	// Screenshot builds replace the pin list with a fixed fixture so the home-menu
+	// count and the pinned list are identical every run (see fixtures.js / the
+	// release-build skill). Compiled out of normal builds.
+	pins_seed_fixtures();
+#endif
+
 	// Create all windows
 	splash_window_create();
 	home_window_create();

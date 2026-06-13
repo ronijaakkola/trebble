@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
 # Prepare Trebble release artifacts:
-#   1. Clean build of the multi-platform .pbw bundle.
+#   1. Clean build of the multi-platform .pbw bundle (the shippable artifact).
 #   2. A versioned copy of the bundle into release/builds/.
 #   3. Screenshots of every screen on every target platform into
-#      release/screenshots/<platform>/.
+#      release/screenshots/<platform>/, captured from a SEPARATE screenshot build
+#      that serves deterministic Helsinki fixtures (see "Screenshot data" below).
 #
 # Everything lands under release/, which is gitignored.
 #
@@ -44,26 +45,49 @@ if [[ ${#PLATFORMS[@]} -eq 0 ]]; then
   read -r -a PLATFORMS <<< "$ALL_PLATFORMS"
 fi
 
-# How long to wait (seconds) after a button press for a network-backed screen
-# to load. The app fetches live departures from the Digitransit API, so this is
-# sized for that round trip plus rendering. Bump it if screens come up blank.
-LOAD_WAIT="${TREBBLE_LOAD_WAIT:-6}"
+# How long to wait (seconds) after a button press for a data screen to render.
+# In screenshot mode the data is local fixtures (no network), so this only needs
+# to cover the watch<->phone message round trip and rendering. Bump it if a screen
+# comes up still on "Loading..".
+LOAD_WAIT="${TREBBLE_LOAD_WAIT:-5}"
+
+# Wall-clock time the watch status bar is pinned to for every screenshot, so the
+# clock is identical across shots and platforms. The fixture departure countdowns
+# ("now", "3 min", …) are baked in and assume ~10:09, so keep this in step with
+# them if you change it. HH:MM:SS, local watch time.
+SHOT_TIME="${TREBBLE_SHOT_TIME:-10:09:00}"
 
 BUILD_OUT="release/builds"
 SHOTS_OUT="release/screenshots"
+
+# `pebble build` names the bundle after the project directory (e.g.
+# build/trebble.pbw), so resolve it rather than hardcoding the name.
+built_pbw() {
+  local pbw
+  pbw="$(ls -1 build/*.pbw 2>/dev/null | head -1)"
+  if [[ -z "$pbw" ]]; then
+    echo "error: no .pbw found in build/ after build" >&2
+    exit 1
+  fi
+  echo "$pbw"
+}
+# Internal, not-for-upload bundle that carries the screenshot fixtures. Kept under
+# release/ (gitignored) and clearly named so it is never mistaken for the artifact.
+SHOT_PBW="release/.trebble-$VERSION-screenshot.pbw"
 
 echo "==> Trebble release v$VERSION"
 echo "    platforms: ${PLATFORMS[*]}"
 echo
 
-# --- 1. clean build --------------------------------------------------------
-echo "==> Building (clean)…"
+# --- 1. clean build (the shippable artifact) -------------------------------
+# A plain build: no SCREENSHOT_MODE, so it carries none of the fixture code.
+echo "==> Building release bundle (clean)…"
 pebble clean >/dev/null 2>&1 || true
 pebble build 2>&1 | tail -3
 
 mkdir -p "$BUILD_OUT"
 PBW="$BUILD_OUT/trebble-$VERSION.pbw"
-cp build/trebble.pbw "$PBW"
+cp "$(built_pbw)" "$PBW"
 echo "==> Bundle: $PBW"
 echo
 
@@ -72,10 +96,40 @@ if [[ $TAKE_SHOTS -eq 0 ]]; then
   exit 0
 fi
 
-# --- 2. screenshots per platform ------------------------------------------
-# Emulator interactions are inherently flaky (cold boots, transient timeouts),
-# and the bundle is already built by this point, so don't let one bad step abort
-# the whole run. Tolerate failures, warn, and keep going.
+# Platforms whose heap is too small for the fixture build (it adds ~400 bytes and
+# aplite faults on launch at that margin). These fall back to the original
+# live-data approach below instead of the fixtures.
+NOFIX_PLATFORMS="aplite"
+uses_fixtures() { # <platform> -> 0 if it should use the fixture build
+  case " $NOFIX_PLATFORMS " in *" $1 "*) return 1 ;; *) return 0 ;; esac
+}
+
+# Does any requested platform actually use the fixture build?
+ANY_FIXTURE=0
+for P in "${PLATFORMS[@]}"; do
+  if uses_fixtures "$P"; then ANY_FIXTURE=1; break; fi
+done
+
+# --- 2. screenshot build (deterministic fixtures) --------------------------
+# A SECOND build with TREBBLE_SCREENSHOT=1, which defines SCREENSHOT_MODE: the
+# watch seeds four fixture pins and tells the phone JS to serve fixed Helsinki
+# data instead of the live API. A clean is required so the new define (and the
+# screenshotMode message key) actually take. This bundle is only ever installed in
+# the emulator below — it is never the artifact uploaded to the store. Skipped if
+# every requested platform is on the live-data fallback.
+if [[ $ANY_FIXTURE -eq 1 ]]; then
+  echo "==> Building screenshot bundle (TREBBLE_SCREENSHOT=1, clean)…"
+  TREBBLE_SCREENSHOT=1 pebble clean >/dev/null 2>&1 || true
+  TREBBLE_SCREENSHOT=1 pebble build 2>&1 | tail -3
+  cp "$(built_pbw)" "$SHOT_PBW"
+  echo "==> Screenshot bundle: $SHOT_PBW"
+  echo
+fi
+
+# --- 3. screenshots per platform -------------------------------------------
+# Emulator interactions are inherently flaky (cold boots, transient timeouts), and
+# the artifact is already built by this point, so don't let one bad step abort the
+# whole run. Tolerate failures, warn, and keep going.
 set +e
 FAILS=0
 
@@ -93,40 +147,80 @@ shot() { # <platform> <filename>
 press() { # <platform> <button>
   pebble emu-button --emulator "$1" click "$2" >/dev/null 2>&1
 }
+# Capture a data screen with the status-bar clock pinned. The connected phone
+# (pypkjs) re-syncs the watch to host time as the app runs, so the clock has to be
+# re-set right before each shot (it redraws promptly) rather than once up front.
+# A short settle lets the status bar repaint at the new time before we capture.
+timed_shot() { # <platform> <filename>
+  pebble emu-set-time --emulator "$1" "$SHOT_TIME" >/dev/null 2>&1
+  sleep 2
+  shot "$1" "$2"
+}
 
 for P in "${PLATFORMS[@]}"; do
-  echo "==> Screenshots: $P"
   DIR="$SHOTS_OUT/$P"
   mkdir -p "$DIR"
-
-  # Fresh emulator so navigation always starts from the splash screen.
   pebble kill >/dev/null 2>&1 || true
-  pebble install --emulator "$P" "$PBW" >/dev/null 2>&1
 
-  # Splash auto-dismisses after ~1.5s, so grab it first — the screenshot
-  # round-trip itself lands inside that window.
-  shot "$P" "$DIR/01-splash.png"
+  if uses_fixtures "$P"; then
+    # --- fixture flow (deterministic Helsinki data) ------------------------
+    echo "==> Screenshots: $P (fixtures)"
+    pebble install --emulator "$P" "$SHOT_PBW" >/dev/null 2>&1
 
-  # Splash -> Home menu.
-  sleep 4
-  shot "$P" "$DIR/02-home.png"
+    # Force a 24h clock for a uniform status bar. The format sticks (unlike the
+    # time, which the phone re-syncs), so set it once here.
+    pebble emu-time-format --emulator "$P" --format 24h >/dev/null 2>&1
 
-  # Home "Nearby stops" (top row) -> live stops list.
-  press "$P" select
-  sleep "$LOAD_WAIT"
-  shot "$P" "$DIR/03-nearby-stops.png"
+    # Splash auto-dismisses after ~1.5s, so grab it first — the screenshot
+    # round-trip lands inside that window. (No clock on the splash.)
+    shot "$P" "$DIR/01-splash.png"
 
-  # First stop -> live departures list.
-  press "$P" select
-  sleep "$LOAD_WAIT"
-  shot "$P" "$DIR/04-departures.png"
+    # Splash -> Home (main menu). Shows "Pinned stops: 4 stops".
+    sleep 4
+    timed_shot "$P" "$DIR/02-home.png"
 
-  # Back to Home, then down to "Pinned stops" -> pinned list.
-  press "$P" back; sleep 1
-  press "$P" back; sleep 1
-  press "$P" down; sleep 1
-  press "$P" select; sleep 2
-  shot "$P" "$DIR/05-pinned-stops.png"
+    # Home "Nearby stops" (top row) -> fixture stops (bus, metro, bus).
+    press "$P" select; sleep "$LOAD_WAIT"
+    timed_shot "$P" "$DIR/03-nearby-stops.png"
+
+    # Back to Home, down to "Pinned stops" -> fixture pins (2 bus, 1 tram, 1
+    # metro), tram first.
+    press "$P" back; sleep 1
+    press "$P" down; sleep 1
+    press "$P" select; sleep "$LOAD_WAIT"
+    timed_shot "$P" "$DIR/04-pins.png"
+
+    # Open the tram pin (first row) -> fixture departures (tram; first two lines
+    # on the minute display: "now" and "3 min").
+    press "$P" select; sleep "$LOAD_WAIT"
+    timed_shot "$P" "$DIR/05-departures.png"
+  else
+    # --- live-data fallback (heap-constrained platforms, e.g. aplite) ------
+    # The fixture build overflows this platform's heap, so use the shippable
+    # bundle with live debug-location data (the original approach). The data is
+    # whatever Digitransit returns for the debug location, so these shots are not
+    # the controlled set — they are the regular live screens.
+    echo "==> Screenshots: $P (live fallback — fixture build does not fit its heap)"
+    pebble install --emulator "$P" "$PBW" >/dev/null 2>&1
+    pebble emu-time-format --emulator "$P" --format 24h >/dev/null 2>&1
+
+    shot "$P" "$DIR/01-splash.png"
+    sleep 4
+    shot "$P" "$DIR/02-home.png"
+
+    # Nearby stops -> first stop's departures.
+    press "$P" select; sleep "$LOAD_WAIT"
+    shot "$P" "$DIR/03-nearby-stops.png"
+    press "$P" select; sleep "$LOAD_WAIT"
+    shot "$P" "$DIR/04-departures.png"
+
+    # Back to Home, down to Pinned stops.
+    press "$P" back; sleep 1
+    press "$P" back; sleep 1
+    press "$P" down; sleep 1
+    press "$P" select; sleep 2
+    shot "$P" "$DIR/05-pinned-stops.png"
+  fi
 
   pebble kill >/dev/null 2>&1 || true
   echo

@@ -436,6 +436,12 @@ static void home_request_city(void)
 		return;
 	}
 	dict_write_uint16(iter, MESSAGE_KEY_cityMessage, 1);
+#ifdef SCREENSHOT_MODE
+	// Tell the JS side to serve fixtures. JS latches this on first sight, so a
+	// single flag suffices: the city request is the first message the watch sends
+	// (fired at startup, during the splash), well before any data screen opens.
+	dict_write_uint8(iter, MESSAGE_KEY_screenshotMode, 1);
+#endif
 	dict_write_end(iter);
 	app_message_outbox_send();
 	city_requested = true;

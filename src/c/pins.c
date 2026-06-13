@@ -70,6 +70,26 @@ int pins_count(void)
 	return pin_count;
 }
 
+#ifdef SCREENSHOT_MODE
+void pins_seed_fixtures(void)
+{
+	// Only the COUNT matters for the screenshots: the home-menu subtitle reads
+	// pins_count(), and the pinned-stops window needs a non-empty list to fire its
+	// request — whose actual contents the phone ignores in screenshot mode (it
+	// returns the four PINNED_STOPS from fixtures.js regardless). So seed four
+	// minimal stub pins rather than real codes/names; this keeps the aplite footprint
+	// tiny (its heap is ~3.5KB and overflows easily). Not persisted: it is reseeded
+	// on every launch of a screenshot build, so it is deterministic anyway.
+	for (int i = 0; i < 4; ++i) {
+		pins[i].code[0] = (char)('1' + i);
+		pins[i].code[1] = '\0';
+		pins[i].name[0] = '\0';
+		pins[i].type[0] = '\0';
+	}
+	pin_count = 4;
+}
+#endif
+
 bool pins_is_pinned(const char *code)
 {
 	return find_index(code) != -1;
