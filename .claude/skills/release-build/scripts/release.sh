@@ -13,6 +13,7 @@
 #   scripts/release.sh                 # build + screenshot all platforms
 #   scripts/release.sh --no-shots      # build the bundle only, skip screenshots
 #   scripts/release.sh basalt chalk    # build + screenshot only these platforms
+#   scripts/release.sh --tag           # also commit the bump + changelog and tag v<version>
 #
 # Run from the project root (where package.json lives).
 
@@ -33,10 +34,12 @@ ALL_PLATFORMS="$(python3 -c 'import json;print(" ".join(json.load(open("package.
 
 # --- parse args ------------------------------------------------------------
 TAKE_SHOTS=1
+TAG_RELEASE=0
 PLATFORMS=()
 for arg in "$@"; do
   case "$arg" in
     --no-shots) TAKE_SHOTS=0 ;;
+    --tag) TAG_RELEASE=1 ;;
     -*) echo "error: unknown flag $arg" >&2; exit 1 ;;
     *) PLATFORMS+=("$arg") ;;
   esac
@@ -91,8 +94,116 @@ cp "$(built_pbw)" "$PBW"
 echo "==> Bundle: $PBW"
 echo
 
+# --- 1b. changelog ---------------------------------------------------------
+# Compile a CHANGELOG.md entry for this release: every commit since the previous
+# release, bounded by the most recent git tag reachable from HEAD (releases are
+# tagged v<version>, e.g. by `--tag` below). This writes the technical changelog,
+# one bullet per commit, and prints the same commit list so the skill can curate
+# the short, user-facing store changelog from it (see SKILL.md). Runs even with
+# --no-shots.
+echo "==> Compiling changelog for v$VERSION…"
+
+SINCE_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [[ -n "$SINCE_TAG" ]]; then
+  RANGE="$SINCE_TAG..HEAD"
+  echo "    Range: since $SINCE_TAG"
+else
+  # No tags yet (first tagged release). Bootstrap from the previous *version
+  # bump* instead — the most recent commit that set a version DIFFERENT from the
+  # current one — so this run still produces a sensible changelog. Once this
+  # release is tagged (--tag, or manually), later runs use the tag above.
+  SINCE="$(python3 - "$VERSION" <<'PY'
+import json, subprocess, sys
+version = sys.argv[1]
+try:
+    commits = subprocess.check_output(
+        ["git", "log", "--format=%H", "-G", '"version"[[:space:]]*:', "--", "package.json"],
+        text=True,
+    ).split()
+except subprocess.CalledProcessError:
+    commits = []
+since = ""
+for h in commits:  # newest -> oldest; first commit whose version != current is the boundary
+    try:
+        v = json.loads(subprocess.check_output(["git", "show", f"{h}:package.json"], text=True))["version"]
+    except Exception:
+        continue
+    if v != version:
+        since = h
+        break
+print(since)
+PY
+)"
+  if [[ -n "$SINCE" ]]; then
+    RANGE="$SINCE..HEAD"
+    echo "    Range: no tags yet — since previous version bump ${SINCE:0:7}"
+  else
+    RANGE="HEAD"   # no tags and no earlier version — take the whole history
+    echo "    Range: no tags yet — whole history"
+  fi
+fi
+
+# Raw commit subjects for this release (newest first, merges excluded).
+COMMITS="$(git log --no-merges --format='- %s (%h)' $RANGE)"
+
+if [[ -z "$COMMITS" ]]; then
+  echo "    No commits since the last version bump — skipping changelog."
+else
+  DATE="$(date +%Y-%m-%d)"
+  # Prepend (or refresh) the v$VERSION section at the top of CHANGELOG.md so a
+  # re-run regenerates it in place rather than duplicating it.
+  COMMITS="$COMMITS" VERSION="$VERSION" DATE="$DATE" python3 - <<'PY'
+import os, re
+path = "CHANGELOG.md"
+version, date, commits = os.environ["VERSION"], os.environ["DATE"], os.environ["COMMITS"]
+section = f"## v{version} — {date}\n\n{commits}\n"
+existing = open(path).read() if os.path.exists(path) else ""
+# Drop any existing section for this version, then re-add it at the top.
+existing = re.sub(rf"(?ms)^## v{re.escape(version)} .*?(?=^## |\Z)", "", existing)
+if existing.startswith("# Changelog"):
+    existing = existing[len("# Changelog"):]
+existing = existing.lstrip("\n")
+out = "# Changelog\n\n" + section + (("\n" + existing) if existing.strip() else "")
+open(path, "w").write(out.rstrip("\n") + "\n")
+print(f"    Wrote {path} — v{version} ({commits.count(chr(10)) + 1} commits)")
+PY
+  echo
+  echo "    --- commits in this release (curate the user-facing store list from these) ---"
+  echo "$COMMITS" | sed 's/^/    /'
+  echo
+fi
+
+# Mark this release in git: commit the version bump + changelog and tag
+# v<version>. Only runs with --tag; otherwise the run makes no git changes and the
+# final summary prints the equivalent manual commands. The tag is local — pushing
+# (and publishing the .pbw) stays a deliberate, separate step. The next release's
+# changelog is bounded by this tag.
+finalize_release() {
+  [[ $TAG_RELEASE -eq 1 ]] || return 0
+  local tag="v$VERSION"
+  echo "==> Finalizing release $tag (commit + tag)…"
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    echo "    WARN: tag $tag already exists — leaving git untouched."
+    echo
+    return 0
+  fi
+  # Stage only the release files, so unrelated working-tree changes are untouched.
+  git add package.json CHANGELOG.md 2>/dev/null || true
+  if git diff --cached --quiet; then
+    echo "    Nothing to commit (package.json + CHANGELOG.md already committed)."
+  else
+    git commit -m "Release $tag" >/dev/null
+    echo "    Committed version bump + changelog as \"Release $tag\"."
+  fi
+  git tag "$tag"
+  echo "    Tagged $tag (local). Push when publishing: git push && git push origin $tag"
+  echo
+}
+
 if [[ $TAKE_SHOTS -eq 0 ]]; then
-  echo "==> Skipping screenshots (--no-shots). Done."
+  echo "==> Skipping screenshots (--no-shots)."
+  finalize_release
+  echo "==> Done."
   exit 0
 fi
 
@@ -226,9 +337,16 @@ for P in "${PLATFORMS[@]}"; do
   echo
 done
 
+finalize_release
+
 echo "==> Done."
 echo "    Bundle:      $PBW"
+echo "    Changelog:   CHANGELOG.md (v$VERSION)"
 echo "    Screenshots: $SHOTS_OUT/<platform>/"
+if [[ $TAG_RELEASE -eq 0 ]]; then
+  echo "    To mark this release in git (or re-run with --tag):"
+  echo "      git add package.json CHANGELOG.md && git commit -m \"Release v$VERSION\" && git tag v$VERSION"
+fi
 if [[ $FAILS -gt 0 ]]; then
   echo "    NOTE: $FAILS screen(s) failed to capture — re-run, optionally with a"
   echo "          larger TREBBLE_LOAD_WAIT, to fill the gaps."
