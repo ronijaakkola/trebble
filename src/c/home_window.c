@@ -1,6 +1,7 @@
 #include <pebble.h>
 #include "home_window.h"
 #include "main_window.h"
+#include "bikes_window.h"
 #include "pins.h"
 #include "pins_window.h"
 #include "splash_window.h" // BG_COLOR, shared with the splash screen
@@ -18,6 +19,9 @@ static uint16_t savedSelectedRow = 0;
 // redraw, mirroring how the error window holds its PDC icon.
 static GDrawCommandImage *nearbyIcon;
 static GDrawCommandImage *pinnedIcon;
+#ifndef PBL_PLATFORM_APLITE
+static GDrawCommandImage *bikeIcon;
+#endif
 static GBitmap *locationIcon; // small pin shown before the location label in the header
 
 // Detected city, shown in the menu header. Resolved from the feed prefix of the
@@ -27,6 +31,16 @@ static GBitmap *locationIcon; // small pin shown before the location label in th
 // case the header falls back to the app name.
 #define PERSIST_KEY_CITY 50
 static char detected_city[24] = "";
+
+#ifndef PBL_PLATFORM_APLITE
+// Whether the detected city has city bikes (any rental station within 5 km of the
+// user — see createCityQuery). When false, the "City bikes" row is hidden. Persisted
+// (key 51) so the last known answer applies immediately on launch, before the fresh
+// lookup replies. Defaults to shown: the row is hidden only once we positively learn
+// there are no bikes here.
+#define PERSIST_KEY_CITY_HAS_BIKES 51
+static bool city_has_bikes = true;
+#endif
 
 // True once the city lookup has replied (with a city or an empty "unknown"). It
 // lets the header tell "still looking" apart from "looked, found nothing" so the
@@ -56,9 +70,14 @@ struct HomeItem {
 	char subtitle[20];
 };
 
-#define NUM_HOME_ITEMS 2
 #define HOME_ROW_NEARBY 0
 #define HOME_ROW_PINNED 1
+#ifdef PBL_PLATFORM_APLITE
+#define NUM_HOME_ITEMS 2
+#else
+#define NUM_HOME_ITEMS 3
+#define HOME_ROW_BIKES 2
+#endif
 
 // Single-line header on the splash-screen background color: app name on the left
 // edge, detected location on the right.
@@ -67,7 +86,20 @@ struct HomeItem {
 static struct HomeItem home_items[NUM_HOME_ITEMS] = {
 	{ "Nearby stops", "" },
 	{ "Pinned stops", "" }, // subtitle is filled in at draw time from the live count
+#ifndef PBL_PLATFORM_APLITE
+	{ "City bikes", "" },
+#endif
 };
+
+#ifndef PBL_PLATFORM_APLITE
+// Number of visible home rows. The "City bikes" row (the last item) is hidden when
+// the detected city has no bikes. Not compiled on aplite, which has no bikes row and
+// must carry none of this feature's code (its heap is at the edge).
+static uint16_t home_visible_rows(void)
+{
+	return city_has_bikes ? NUM_HOME_ITEMS : (uint16_t)(NUM_HOME_ITEMS - 1);
+}
+#endif
 
 uint16_t home_menu_get_num_sections_callback(MenuLayer *menu_layer, void *data)
 {
@@ -78,7 +110,11 @@ uint16_t home_menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section
 {
 	switch (section_index) {
 		case 0:
+#ifdef PBL_PLATFORM_APLITE
 			return NUM_HOME_ITEMS;
+#else
+			return home_visible_rows();
+#endif
 		default:
 			return 0;
 	}
@@ -174,6 +210,18 @@ static void pdc_set_colors(GDrawCommandImage *image, GColor stroke, GColor fill)
 	}
 }
 
+static GDrawCommandImage *home_icon_for_row(uint16_t row)
+{
+	switch (row) {
+		case HOME_ROW_NEARBY: return nearbyIcon;
+		case HOME_ROW_PINNED: return pinnedIcon;
+#ifndef PBL_PLATFORM_APLITE
+		case HOME_ROW_BIKES:  return bikeIcon;
+#endif
+		default:              return NULL;
+	}
+}
+
 void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data)
 {
 	if (cell_index->section != 0) {
@@ -197,7 +245,7 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 	// Round display: the icon + title are centered as a group (with the subtitle, if
 	// any, centered below) so nothing is clipped by the circular bezel on the rows
 	// above and below the focused one.
-	GDrawCommandImage *icon = (cell_index->row == HOME_ROW_NEARBY) ? nearbyIcon : pinnedIcon;
+	GDrawCommandImage *icon = home_icon_for_row(cell_index->row);
 	GFont title_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 	GSize tsz = graphics_text_layout_get_content_size(item->title, title_font, GRect(0, 0, bounds.size.w, 24), GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
 	GSize isz = icon ? gdraw_command_image_get_bounds_size(icon) : GSize(0, 0);
@@ -241,7 +289,7 @@ void home_menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuInd
 	// inverts to a negative on the solid-black selected row so it stays visible.
 	int16_t icon_left = 8;
 	int16_t text_x = icon_left + 25 + 10; // fallback width if the PDC is missing
-	GDrawCommandImage *icon = (cell_index->row == HOME_ROW_NEARBY) ? nearbyIcon : pinnedIcon;
+	GDrawCommandImage *icon = home_icon_for_row(cell_index->row);
 	if (icon) {
 		#ifndef PBL_COLOR
 			bool highlighted = menu_cell_layer_is_highlighted(cell_layer);
@@ -278,6 +326,11 @@ void home_menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, voi
 		case HOME_ROW_PINNED:
 			pins_window_show();
 			break;
+#ifndef PBL_PLATFORM_APLITE
+		case HOME_ROW_BIKES:
+			window_stack_push(bikes_window_get_window(), true);
+			break;
+#endif
 		default:
 			break;
 	}
@@ -293,7 +346,7 @@ void home_setup_menu_layer(Window *window, Layer *window_layer)
 	// exactly fit them and center that block vertically, so the rows stay put and
 	// only the highlight moves (see menu_layer_set_center_focused below).
 	int16_t full_h = window_bounds.size.h;
-	int16_t content_h = NUM_HOME_ITEMS * home_menu_get_cell_height_callback(NULL, NULL, NULL);
+	int16_t content_h = home_visible_rows() * home_menu_get_cell_height_callback(NULL, NULL, NULL);
 	// Start the menu so the two-row block is vertically centered, and leave slack
 	// below it (rather than sizing the frame to the content exactly) so the rows
 	// top-align in the frame and hold still instead of re-centering on selection.
@@ -343,6 +396,11 @@ static void home_build_ui(Window *window)
 
 	nearbyIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_STOP);
 	pinnedIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_TIMELINE_PIN);
+#ifndef PBL_PLATFORM_APLITE
+	// Drawn as authored — black stroke, white fill — to match the bus/tram/stop icons,
+	// which are likewise not recolored on color watches.
+	bikeIcon = gdraw_command_image_create_with_resource(RESOURCE_ID_IMAGE_BIKE);
+#endif
 	locationIcon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_LOCATION);
 
 	statusLayer = status_bar_layer_create();
@@ -374,6 +432,12 @@ static void home_destroy_ui(void)
 		gdraw_command_image_destroy(pinnedIcon);
 		pinnedIcon = NULL;
 	}
+#ifndef PBL_PLATFORM_APLITE
+	if (bikeIcon) {
+		gdraw_command_image_destroy(bikeIcon);
+		bikeIcon = NULL;
+	}
+#endif
 	if (locationIcon) {
 		gbitmap_destroy(locationIcon);
 		locationIcon = NULL;
@@ -412,6 +476,16 @@ static void home_message_inbox(DictionaryIterator *iter, void *context)
 		}
 		return;
 	}
+
+#ifndef PBL_PLATFORM_APLITE
+	// The cityName reply also carries whether this city has bikes. Update (and persist)
+	// the flag; the menu reload below picks up the new visible-row count.
+	Tuple *has_bikes_t = dict_find(iter, MESSAGE_KEY_cityHasBikes);
+	if (has_bikes_t) {
+		city_has_bikes = has_bikes_t->value->int32 != 0;
+		persist_write_bool(PERSIST_KEY_CITY_HAS_BIKES, city_has_bikes);
+	}
+#endif
 
 	Tuple *city = dict_find(iter, MESSAGE_KEY_cityName);
 	if (!city) {
@@ -471,6 +545,13 @@ void home_window_start_location_lookup()
 	if (persist_exists(PERSIST_KEY_CITY)) {
 		persist_read_string(PERSIST_KEY_CITY, detected_city, sizeof(detected_city));
 	}
+#ifndef PBL_PLATFORM_APLITE
+	// Apply the last known has-bikes answer immediately so the row count is right on
+	// the first paint; the fresh lookup updates it.
+	if (persist_exists(PERSIST_KEY_CITY_HAS_BIKES)) {
+		city_has_bikes = persist_read_bool(PERSIST_KEY_CITY_HAS_BIKES);
+	}
+#endif
 	// A fresh lookup is pending; the header shows "Loading.." until it replies
 	// (unless a last known city is already on screen).
 	city_resolved = false;
@@ -514,7 +595,14 @@ void home_window_appear(Window *window)
 	if (homeMenuLayer) {
 		menu_layer_reload_data(homeMenuLayer);
 		// Restore the row the user left on before the menu was freed.
+#ifdef PBL_PLATFORM_APLITE
 		menu_layer_set_selected_index(homeMenuLayer, MenuIndex(0, savedSelectedRow), MenuRowAlignCenter, false);
+#else
+		// Clamped in case the row count shrank (e.g. the City bikes row was hidden).
+		uint16_t rows = home_visible_rows();
+		uint16_t row = savedSelectedRow < rows ? savedSelectedRow : (uint16_t)(rows - 1);
+		menu_layer_set_selected_index(homeMenuLayer, MenuIndex(0, row), MenuRowAlignCenter, false);
+#endif
 	}
 }
 

@@ -35,6 +35,18 @@ var PINNED_STOPS = [
 // 3) City shown in the menu header.
 var CITY = "Helsinki";
 
+// 4) City bike stations — four real Helsinki (smoove) stations with short names that
+//    do not truncate, ordered nearest-first. Availability is fixed to exercise the
+//    count colours: 7 green (>3), 0 grey, 3 red (1-3), 10 green. Names are already
+//    code-stripped (the live path strips the leading station number). Served for a
+//    bikeMessage in screenshot mode.
+var BIKE_STATIONS = [
+  { bikeMessage: 1, bikeCode: "smoove:071", bikeName: "Ruoholahti", bikeDist: 90,  bikeBikes: 7 },
+  { bikeMessage: 1, bikeCode: "smoove:014", bikeName: "Hakaniemi",  bikeDist: 170, bikeBikes: 0 },
+  { bikeMessage: 1, bikeCode: "smoove:003", bikeName: "Ooppera",    bikeDist: 260, bikeBikes: 3 },
+  { bikeMessage: 1, bikeCode: "smoove:002", bikeName: "Kauppatori", bikeDist: 420, bikeBikes: 10 },
+];
+
 // 4) Departures, keyed by stop code. The screenshot flow opens the tram pin
 //    (HSL:1130439), whose first two lines use the minute display: one "now" and
 //    one "3" (both realtime, so they render green). Other codes fall back to a
@@ -86,5 +98,6 @@ module.exports = {
   NEARBY_STOPS: NEARBY_STOPS,
   PINNED_STOPS: PINNED_STOPS,
   CITY: CITY,
+  BIKE_STATIONS: BIKE_STATIONS,
   departuresFor: departuresFor,
 };

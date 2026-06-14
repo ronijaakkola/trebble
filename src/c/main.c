@@ -3,6 +3,9 @@
 #include "home_window.h"
 #include "main_window.h"
 #include "lines_window.h"
+#ifndef PBL_PLATFORM_APLITE
+#include "bikes_window.h" // City Bikes is not built on aplite (memory); see bikes_window.h
+#endif
 #include "error_window.h"
 #include "pins.h"
 #include "pins_window.h"
@@ -79,6 +82,9 @@ void init()
 	home_window_create();
 	main_window_create();
 	lines_window_create();
+#ifndef PBL_PLATFORM_APLITE
+	bikes_window_create();
+#endif
 	error_window_create();
 	pins_window_create();
 	feedback_window_create();
@@ -107,6 +113,9 @@ void deinit()
 	home_window_destroy();
 	main_window_destroy();
 	lines_window_destroy();
+#ifndef PBL_PLATFORM_APLITE
+	bikes_window_destroy();
+#endif
 	error_window_destroy();
 	pins_window_destroy();
 	feedback_window_destroy();

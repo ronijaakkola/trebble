@@ -98,6 +98,11 @@ var stopsShown = 0;
 // Departure lines info parameters
 const lineLimit = 10;
 
+// City bike station search parameters. Mirrors the nearby-stops radius/limit so
+// bikes are scoped the same way stops are.
+const bikeSearchDiameter = 500;
+const bikesLimit = 10;
+
 // Departure paging state. `departureStartTime` is the absolute epoch-seconds the
 // currently shown window begins at (0 = "now"); `departureNextStartTime` is where
 // the next "Show later" window should begin (just after the last departure we
@@ -285,6 +290,78 @@ function handleNearbyStops(mode) {
   );
 }
 
+// Fetches city bike / bike-share stations near the user and sends them to the
+// watch, mirroring getStopsFromLocation. Floating rental vehicles that the
+// VEHICLE_RENT filter can also return are dropped (only docking stations have the
+// __typename "VehicleRentalStation"), as are non-operative stations. Only the
+// available-bikes count is sent: a non-realtime station reports capacity/2 as a
+// placeholder, which would mislead, so it is sent as -1 ("unknown") and the watch
+// renders a dash instead of a fake number.
+function getBikeStationsFromLocation(pos) {
+  var crd = pos.coords;
+  var query = queries.createBikeStationsQuery(crd.latitude, crd.longitude, bikeSearchDiameter, 20);
+  var req = createGraphQLRequest(url);
+
+  req.onload = function (e) {
+    if (req.readyState === 4) {
+      if (req.status === 200) {
+        if (req.responseText === "") {
+          console.log("JS: Bike stations request returned nothing.");
+          Pebble.sendAppMessage({ bikeNoFound: 1 });
+          return;
+        }
+        var response = JSON.parse(req.responseText);
+
+        if (response && response.data && response.data.nearest) {
+          var edges = response.data.nearest.edges;
+
+          var stations = edges
+            .filter(function (edge) {
+              var place = edge.node.place;
+              return (
+                place &&
+                place.__typename === "VehicleRentalStation" &&
+                place.operative !== false
+              );
+            })
+            .slice(0, bikesLimit)
+            .map(function (edge) {
+              var place = edge.node.place;
+              var bikes =
+                place.realtime && place.availableVehicles
+                  ? place.availableVehicles.total
+                  : -1;
+              // Cap at 99: the watch column shows at most two digits, so anything
+              // higher just reads "99".
+              if (bikes > 99) {
+                bikes = 99;
+              }
+              return {
+                bikeMessage: 1,
+                bikeCode: place.stationId,
+                // Station names come prefixed with the station code (e.g. "227
+                // Ilmarinkatu"); strip the leading number so only the name shows.
+                bikeName: place.name.replace(/^\d+\s+/, ""),
+                bikeDist: edge.node.distance,
+                bikeBikes: bikes,
+              };
+            });
+
+          sendList(stations);
+        } else {
+          console.log("JS: No valid bike station data in the GraphQL response.");
+          Pebble.sendAppMessage({ bikeNoFound: 1 });
+        }
+      } else {
+        console.log("JS: Error in getting bike stations. Status: " + req.status);
+        Pebble.sendAppMessage({ bikeNoFound: 1 });
+      }
+    }
+  };
+
+  req.send(query);
+}
+
 // Resolves the city the user is in from the feed prefix of the nearest stop and
 // sends it to the watch for the menu header. The watch distinguishes two "no
 // city" outcomes: a completed lookup that genuinely found no known city sends an
@@ -339,8 +416,21 @@ function getCityFromLocation(pos) {
       break;
     }
 
-    console.log("JS: Detected city: '" + city + "'");
-    Pebble.sendAppMessage({ cityName: city });
+    // Whether this area has city bikes — any rental station within the 5 km bikeCheck.
+    // The watch hides the "City bikes" row when there are none.
+    var bikeEdges =
+      response.data.bikeCheck && response.data.bikeCheck.edges
+        ? response.data.bikeCheck.edges
+        : [];
+    var hasBikes = bikeEdges.some(function (edge) {
+      return (
+        edge.node.place &&
+        edge.node.place.__typename === "VehicleRentalStation"
+      );
+    });
+
+    console.log("JS: Detected city: '" + city + "', hasBikes: " + hasBikes);
+    Pebble.sendAppMessage({ cityName: city, cityHasBikes: hasBikes ? 1 : 0 });
   };
 
   req.send(query);
@@ -730,6 +820,28 @@ Pebble.addEventListener("appmessage", function (e) {
   } else if (e.payload.stopMore) {
     console.log("JS: Received stopMore.");
     handleNearbyStops("more");
+  } else if (e.payload.bikeMessage) {
+    console.log("JS: Received bikeMessage.");
+    if (screenshotActive) {
+      console.log("JS: Screenshot mode, sending fixture bike stations.");
+      sendList(fixtures.BIKE_STATIONS);
+      return;
+    }
+    if (debugLocation && isEmulator()) {
+      console.log("JS: Emulator detected, using debug location: " + debugLocation);
+      getBikeStationsFromLocation({
+        coords: { latitude: debugLocation[0], longitude: debugLocation[1] },
+      });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      getBikeStationsFromLocation,
+      (err) => {
+        console.warn("JS: GPS error (" + err.code + "): " + err.message);
+        Pebble.sendAppMessage({ noGps: 1 });
+      },
+      geolocationOptions
+    );
   } else if (e.payload.lineMessage) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage
@@ -761,7 +873,9 @@ Pebble.addEventListener("appmessage", function (e) {
     console.log("JS: Received cityMessage.");
     if (screenshotActive) {
       console.log("JS: Screenshot mode, sending fixture city.");
-      Pebble.sendAppMessage({ cityName: fixtures.CITY });
+      // Helsinki has city bikes, so flag it on too — keeps the "City bikes" home row
+      // showing deterministically in screenshot builds regardless of persisted state.
+      Pebble.sendAppMessage({ cityName: fixtures.CITY, cityHasBikes: 1 });
       return;
     }
     handleCityDetection();

@@ -50,6 +50,12 @@ function createDeparturesQuery(stopCode, startTime, numberOfDepartures) {
 // needed. A few results are fetched so long-distance "MATKA" stops can be
 // skipped, and a wide radius makes detection work even where the nearest local
 // stop is beyond the normal nearby-stops range.
+//
+// The same request also checks whether the city has city bikes (any rental station
+// within 5 km — the radius that, per measurement, reaches a station from essentially
+// any in-city/suburb location). The watch uses this to hide the "City bikes" menu row
+// in regions with no bike system. Folding it into the city query avoids a second
+// network round-trip.
 function createCityQuery(latitude, longitude) {
   return `
 {
@@ -58,6 +64,15 @@ function createCityQuery(latitude, longitude) {
       node {
         stop {
           gtfsId
+        }
+      }
+    }
+  }
+  bikeCheck: nearest(lat: ${latitude}, lon: ${longitude}, maxDistance: 5000, maxResults: 1, filterByPlaceTypes: [VEHICLE_RENT]) {
+    edges {
+      node {
+        place {
+          __typename
         }
       }
     }
@@ -86,9 +101,43 @@ function createPinnedStopsQuery(codes) {
 }`;
 }
 
+// Finds city bike / bike-share stations near a location. Digitransit has no
+// "...ByRadius" query for rental stations, so the generic `nearest` query is used
+// with filterByPlaceTypes: [VEHICLE_RENT]; it returns edges carrying a walking
+// `distance` (meters) and a `place`, mirroring stopsByRadius. `place` is a union, so
+// a VehicleRentalStation inline fragment selects the station fields. The filter can
+// also match free-floating RentalVehicles, so the JS filters on __typename. Only the
+// available-bikes count is shown on the watch (availableVehicles.total); availableSpaces
+// is intentionally not requested (the list shows bikes only).
+function createBikeStationsQuery(latitude, longitude, radius, limit) {
+  return `
+{
+  nearest(lat: ${latitude}, lon: ${longitude}, maxDistance: ${radius}, maxResults: ${limit}, filterByPlaceTypes: [VEHICLE_RENT]) {
+    edges {
+      node {
+        distance
+        place {
+          __typename
+          ... on VehicleRentalStation {
+            stationId
+            name
+            operative
+            realtime
+            availableVehicles {
+              total
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+}
+
 module.exports = {
   createStopsQuery,
   createCityQuery,
   createDeparturesQuery,
-  createPinnedStopsQuery
+  createPinnedStopsQuery,
+  createBikeStationsQuery
 };
