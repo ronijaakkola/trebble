@@ -6,6 +6,15 @@
 #include "marquee.h"
 #include "region.h"
 
+// The "Load more" paging UI is left out of aplite: its ~3.5KB free heap is too
+// tight for the extra code (measured: enabling it leaves ~2.8KB free and the app
+// App-faults during window setup), so aplite keeps the original single-page nearby
+// list. On every other platform LOAD_MORE_ENABLED turns on the extra row and its
+// handling. Mirrors lines_window.c's SHOW_LATER_ENABLED, which is gated the same way.
+#ifndef PBL_PLATFORM_APLITE
+#define LOAD_MORE_ENABLED
+#endif
+
 static Window *mainWindow;
 static MenuLayer *mainMenuLayer;
 static StatusBarLayer *statusLayer;
@@ -37,6 +46,25 @@ static int stopAmount = 0;
 static struct StopInfo stops[NUM_STOPS];
 static bool stop_transfer_started;
 static int stop_index;
+
+// Which page of nearby stops to fetch. LOAD is the first ("nearest") page; MORE
+// is the next page requested by the "Load more" row, which replaces the list (the
+// same way the departures "Show later" row replaces the visible window).
+typedef enum {
+	STOP_REQ_LOAD,
+	STOP_REQ_MORE,
+} StopRequestType;
+
+static void main_request_stops(StopRequestType type);
+
+#ifdef LOAD_MORE_ENABLED
+// While a "Load more" fetch is in flight the menu is blanked; this remembers the
+// count to restore if that fetch turns up no further stops. The timer shows the
+// "No more stops" notice for a couple of seconds before restoring. Mirrors the
+// departures (lines_window.c) prev_line_amount / no_more_timer handling.
+static int prev_stop_amount;
+static AppTimer *no_more_timer;
+#endif
 
 // True once a stop transfer has completed, so we can tell "still loading" apart
 // from "loaded but found nothing" and show the right centered message.
@@ -85,6 +113,43 @@ static void process_stop_tuple(Tuple *t)
 	}
 }
 
+#ifdef LOAD_MORE_ENABLED
+// Fired ~3s after a "Load more" fetch reports no further stops: restores the page
+// that was on screen before the fetch (still intact in `stops`, since the empty
+// response sent no items) and parks the selection back on the "Load more" row so
+// the user can try again or scroll up.
+static void main_no_more_restore(void *data)
+{
+	no_more_timer = NULL;
+	stopAmount = prev_stop_amount;
+	if (loadingLayer) {
+		text_layer_set_text(loadingLayer, "Loading..");
+	}
+	main_set_loading(false);
+	if (mainMenuLayer) {
+		// The menu was hidden when "Load more" was pressed; reveal it again with the
+		// restored page and park the selection on the "Load more" row.
+		layer_set_hidden(menu_layer_get_layer(mainMenuLayer), false);
+		menu_layer_reload_data(mainMenuLayer);
+		menu_layer_set_selected_index(mainMenuLayer, MenuIndex(0, stopAmount), MenuRowAlignCenter, false);
+	}
+}
+
+// Shows "No more stops" where the "Loading.." text was, then schedules the
+// previous list to come back. Used when a "Load more" fetch finds nothing more.
+static void main_show_no_more(void)
+{
+	if (loadingLayer) {
+		text_layer_set_text(loadingLayer, "No more stops");
+	}
+	main_set_loading(true);
+	if (no_more_timer) {
+		app_timer_cancel(no_more_timer);
+	}
+	no_more_timer = app_timer_register(3000, main_no_more_restore, NULL);
+}
+#endif // LOAD_MORE_ENABLED
+
 void main_message_inbox(DictionaryIterator *iter, void *context)
 {
 	// Each stop arrives as its own message, tagged with stopMessage. We collect
@@ -94,6 +159,8 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		if (!stop_transfer_started) {
 			APP_LOG(APP_LOG_LEVEL_INFO, "MainWindow: Started stop message transfer.");
 			stop_transfer_started = true;
+			// A "Load more" page replaces the list (like the departures "Show later"
+			// window), so every transfer refills from the top.
 			stop_index = 0;
 		}
 		if (stop_index >= NUM_STOPS) {
@@ -117,6 +184,16 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		// arrived; the count is retained so it renders when the window reappears.
 		if (mainMenuLayer) {
 			menu_layer_reload_data(mainMenuLayer);
+#ifdef LOAD_MORE_ENABLED
+			// A "Load more" press hid the menu while the next page loaded; reveal it
+			// again and move focus back to the first stop (MenuRowAlignNone keeps the
+			// header visible), so each page replaces the previous one starting at the
+			// top — the same as the departures "Show later" window.
+			if (stopAmount > 0) {
+				layer_set_hidden(menu_layer_get_layer(mainMenuLayer), false);
+				menu_layer_set_selected_index(mainMenuLayer, MenuIndex(0, 0), MenuRowAlignNone, false);
+			}
+#endif
 		}
 		// No nearby stops were found: keep the centered overlay visible but swap
 		// the "Loading.." text for an empty-state message (same font/centering),
@@ -128,6 +205,17 @@ void main_message_inbox(DictionaryIterator *iter, void *context)
 		vibes_short_pulse();
 		return;
 	}
+
+#ifdef LOAD_MORE_ENABLED
+	if (dict_find(iter, MESSAGE_KEY_stopNoMore)) {
+		// The "Load more" fetch found no further stops. Briefly say so, then restore
+		// the list we already had; `stops` was never overwritten, so it survives.
+		APP_LOG(APP_LOG_LEVEL_INFO, "MainWindow: No more nearby stops available.");
+		stop_transfer_started = false;
+		main_show_no_more();
+		return;
+	}
+#endif
 
 	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
@@ -165,11 +253,25 @@ uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_inde
 {
 	switch (section_index) {
 		case 0:
+#ifdef LOAD_MORE_ENABLED
+			// One extra row for the "Load more" action, but only once there are stops
+			// to extend (not while loading or when there are none nearby).
+			return stopAmount > 0 ? stopAmount + 1 : 0;
+#else
 			return stopAmount;
+#endif
 		default:
 			return 0;
 	}
 }
+
+#ifdef LOAD_MORE_ENABLED
+// True for the synthetic "Load more" row, which sits just past the nearby stops.
+static bool is_load_more_row(const MenuIndex *cell_index)
+{
+	return cell_index->section == 0 && stopAmount > 0 && cell_index->row == stopAmount;
+}
+#endif
 
 int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data)
 {
@@ -207,6 +309,13 @@ static void main_header_update_proc(Layer *layer, GContext *ctx)
 
 int16_t menu_get_cell_height_callback(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef LOAD_MORE_ENABLED
+	// The "Load more" action is a plain single-line row, matching the departures
+	// "Show later" row.
+	if (is_load_more_row(cell_index)) {
+		return 44;
+	}
+#endif
 #ifdef PBL_PLATFORM_EMERY
 	// Emery rows stack the name over a meta line (stop-code badge + distance), so
 	// they're a touch taller than the single-line departures rows (48), but only
@@ -226,6 +335,24 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 	if (cell_index->section != 0) {
 		return;
 	}
+
+#ifdef LOAD_MORE_ENABLED
+	// The synthetic last row is the "Load more" action, not a stop. Drawn the same
+	// way as the departures "Show later" row: centered bold text on a plain row.
+	if (is_load_more_row(cell_index)) {
+		#ifdef PBL_COLOR
+			GColor action_color = GColorBlack;
+		#else
+			GColor action_color = menu_cell_layer_is_highlighted(cell_layer) ? GColorWhite : GColorBlack;
+		#endif
+		GRect row = layer_get_bounds(cell_layer);
+		// Nudge the single line down so it sits centered in the 44px row.
+		row.origin.y += (row.size.h - 22) / 2;
+		graphics_context_set_text_color(ctx, action_color);
+		graphics_draw_text(ctx, "Load more", fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), row, GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+		return;
+	}
+#endif
 
 	struct StopInfo *stop = &stops[cell_index->row];
 	GRect bounds = layer_get_bounds(cell_layer);
@@ -360,12 +487,41 @@ void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *c
 
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef LOAD_MORE_ENABLED
+	if (is_load_more_row(cell_index)) {
+		// Empty the menu and show the loading indicator while the next page loads.
+		// The current stops stay in `stops` so they can be restored if there are no
+		// more. The menu layer is hidden outright (not just reloaded to zero rows):
+		// reloading a populated menu to empty can leave its section header drawn,
+		// which would show a second "Nearby stops" title behind the loading overlay.
+		// Going through the empty state also resets the menu to the top, so the next
+		// page starts at its first stop. Mirrors the departures "Show later" path.
+		prev_stop_amount = stopAmount;
+		stopAmount = 0;
+		if (mainMenuLayer) {
+			layer_set_hidden(menu_layer_get_layer(mainMenuLayer), true);
+			menu_layer_reload_data(mainMenuLayer);
+		}
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "Loading..");
+		}
+		main_set_loading(true);
+		main_request_stops(STOP_REQ_MORE);
+		return;
+	}
+#endif
 	lines_window_show(stops[cell_index->row].code, stops[cell_index->row].name, stops[cell_index->row].type);
 }
 
 // Long-pressing a stop opens an action menu to pin/unpin it.
 void menu_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
+#ifdef LOAD_MORE_ENABLED
+	// The "Load more" row has no pin action.
+	if (is_load_more_row(cell_index)) {
+		return;
+	}
+#endif
 	struct StopInfo *stop = &stops[cell_index->row];
 	pins_show_action_menu(stop->code, stop->name, stop->type, "Pin stop", "Unpin stop");
 }
@@ -510,6 +666,26 @@ static void main_destroy_ui(void)
 #endif
 }
 
+// Requests a page of nearby stops from the JS component. LOAD asks for the first
+// ("nearest") page; MORE asks for the next page for the "Load more" row. The key
+// the request is tagged with tells JS which page to return.
+static void main_request_stops(StopRequestType type)
+{
+	app_message_register_inbox_received(main_message_inbox);
+	stop_transfer_started = false;
+
+	DictionaryIterator *iter;
+	app_message_outbox_begin(&iter);
+	if (iter == NULL) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "DictionaryIterator NULL!");
+		return;
+	}
+	uint32_t key = type == STOP_REQ_MORE ? MESSAGE_KEY_stopMore : MESSAGE_KEY_stopMessage;
+	dict_write_uint16(iter, key, 1);
+	dict_write_end(iter);
+	app_message_outbox_send();
+}
+
 void main_window_load(Window *window)
 {
 	// Clear any stops left over from a previous load so the menu does not render
@@ -519,23 +695,13 @@ void main_window_load(Window *window)
 	main_build_ui(window);
 	main_set_loading(true);
 
-	// Request nearby stops from the JS component.
-	app_message_register_inbox_received(main_message_inbox);
-	stop_transfer_started = false;
 	// Reset the per-transfer index too: an empty result sends messageEnd with no
 	// stopMessage to reset it, so a stale count from a previous load would
 	// otherwise be read as the new stop total.
 	stop_index = 0;
 
-	DictionaryIterator *iter;
-	app_message_outbox_begin(&iter);
-	if (iter == NULL) {
-		APP_LOG(APP_LOG_LEVEL_ERROR, "DictionaryIterator NULL!");
-		return;
-	}
-	dict_write_uint16(iter, MESSAGE_KEY_stopMessage, 1);
-	dict_write_end(iter);
-	app_message_outbox_send();
+	// Request the first page of nearby stops from the JS component.
+	main_request_stops(STOP_REQ_LOAD);
 }
 
 // Re-claims the AppMessage inbox whenever the stops window is revealed, including
@@ -552,9 +718,11 @@ void main_window_appear(Window *window)
 			text_layer_set_text(loadingLayer, "No nearby stops");
 		}
 		main_set_loading(stopAmount == 0);
-		// Restore the row the user left on, clamped in case the list shrank.
-		if (stopAmount > 0) {
-			uint16_t row = savedSelectedRow < (uint16_t)stopAmount ? savedSelectedRow : (uint16_t)(stopAmount - 1);
+		// Restore the row the user left on, clamped to the rows now on screen (which
+		// include the "Load more" row where enabled) in case the list shrank.
+		uint16_t rows = menu_get_num_rows_callback(mainMenuLayer, 0, NULL);
+		if (rows > 0) {
+			uint16_t row = savedSelectedRow < rows ? savedSelectedRow : (uint16_t)(rows - 1);
 			menu_layer_set_selected_index(mainMenuLayer, MenuIndex(0, row), MenuRowAlignCenter, false);
 		}
 	}
@@ -570,6 +738,19 @@ void main_window_appear(Window *window)
 void main_window_disappear(Window *window)
 {
 	marquee_detach(mainMenuLayer);
+#ifdef LOAD_MORE_ENABLED
+	// Cancel a pending "No more stops" restore so it cannot fire against the freed
+	// layers, and put back the page count it would have restored so the retained
+	// `stops` re-render (rather than staying blank) on the next reveal.
+	if (no_more_timer) {
+		app_timer_cancel(no_more_timer);
+		no_more_timer = NULL;
+		stopAmount = prev_stop_amount;
+		if (loadingLayer) {
+			text_layer_set_text(loadingLayer, "Loading..");
+		}
+	}
+#endif
 	main_destroy_ui();
 }
 

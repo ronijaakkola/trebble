@@ -80,9 +80,19 @@ function isSupportedMode(mode) {
   return mode === "BUS" || mode === "TRAM" || mode === "SUBWAY";
 }
 
-// Stop search parameters
+// Stop search parameters. The first ("nearest") page searches a tight radius;
+// a "Load more" page widens it so there are genuinely further stops to append.
+// Stops are ordered by distance regardless of radius, so the wider search shares
+// the same closest-first prefix as the first page — paging by slicing off the
+// stops already shown never reorders or duplicates the ones on screen.
 const stopSearchDiameter = 500;
+const stopSearchMoreDiameter = 2000;
 const stopsLimit = 10;
+
+// Nearby-stops paging state. `stopsShown` is the number of (filtered) stops
+// already sent to the watch; a "more" request returns only the stops past that,
+// which the watch appends. Reset to 0 on each fresh ("load") request.
+var stopsShown = 0;
 
 // Departure lines info parameters
 const lineLimit = 10;
@@ -149,9 +159,26 @@ function createGraphQLRequest(url) {
   return req;
 }
 
-function getStopsFromLocation(pos) {
+// Fetches nearby stops for a location. `mode` selects the page:
+//   "load" - the nearest stops; resets the paging cursor.
+//   "more" - the next page (the "Load more" row), searched over a wider radius
+//            and returning only the stops beyond the ones already shown.
+// When a "more" request finds nothing further, `stopNoMore` is sent so the watch
+// keeps the stops already on screen instead of blanking them like `stopNoFound`.
+function getStopsFromLocation(pos, mode) {
   var crd = pos.coords;
-  var query = queries.createStopsQuery(crd.latitude, crd.longitude, stopSearchDiameter, 20);
+  var more = mode === "more";
+  if (!more) {
+    stopsShown = 0;
+  }
+
+  var radius = more ? stopSearchMoreDiameter : stopSearchDiameter;
+  // Roughly half the raw results are dropped as MATKA/unsupported, so fetch about
+  // twice the stops needed to fill the page (kept at 20 for the first page to
+  // match the original single-page behaviour).
+  var fetchCount = Math.max(20, (stopsShown + stopsLimit) * 2);
+  var emptyMessage = more ? { stopNoMore: 1 } : { stopNoFound: 1 };
+  var query = queries.createStopsQuery(crd.latitude, crd.longitude, radius, fetchCount);
   var req = createGraphQLRequest(url);
 
   req.onload = function (e) {
@@ -159,7 +186,7 @@ function getStopsFromLocation(pos) {
       if (req.status === 200) {
         if (req.responseText === "") {
           console.log("JS: Stops request returned no stops.");
-          Pebble.sendAppMessage({ stopNoFound: 1 });
+          Pebble.sendAppMessage(emptyMessage);
           return;
         }
         var response = JSON.parse(req.responseText);
@@ -167,43 +194,94 @@ function getStopsFromLocation(pos) {
         if (response && response.data && response.data.stopsByRadius) {
           var edges = response.data.stopsByRadius.edges;
 
-          var stops = edges
-            .filter(function (edge) {
-              // Ignore results which code starts with MATKA. These
-              // seem to be long range bus stops which do not interest us.
-              // (MATKA stops are buses by mode, so the mode check below would
-              // not exclude them on its own.)
-              return (
-                !edge.node.stop.gtfsId.startsWith("MATKA:") &&
-                isSupportedMode(edge.node.stop.vehicleMode)
-              );
-            })
-            .slice(0, stopsLimit)
-            .map(function (edge) {
-              return {
-                stopMessage: 1,
-                stopCode: edge.node.stop.gtfsId,
-                stopName: edge.node.stop.name,
-                stopDist: edge.node.distance,
-                stopMode: edge.node.stop.vehicleMode,
-              };
-            });
+          var filtered = edges.filter(function (edge) {
+            // Ignore results which code starts with MATKA. These
+            // seem to be long range bus stops which do not interest us.
+            // (MATKA stops are buses by mode, so the mode check below would
+            // not exclude them on its own.)
+            return (
+              !edge.node.stop.gtfsId.startsWith("MATKA:") &&
+              isSupportedMode(edge.node.stop.vehicleMode)
+            );
+          });
 
+          // Only the page beyond what the watch already shows. On the first page
+          // stopsShown is 0, so this is simply the nearest stops.
+          var page = filtered.slice(stopsShown, stopsShown + stopsLimit);
+
+          // A "more" request that turns up nothing new keeps the current list.
+          // A first ("load") request with no stops still sends an empty list so
+          // the watch leaves "Loading.." for its "No nearby stops" empty state.
+          if (more && page.length === 0) {
+            console.log("JS: No more nearby stops to show.");
+            Pebble.sendAppMessage({ stopNoMore: 1 });
+            return;
+          }
+
+          var stops = page.map(function (edge) {
+            return {
+              stopMessage: 1,
+              stopCode: edge.node.stop.gtfsId,
+              stopName: edge.node.stop.name,
+              stopDist: edge.node.distance,
+              stopMode: edge.node.stop.vehicleMode,
+            };
+          });
+
+          stopsShown += stops.length;
           sendList(stops);
         } else {
           console.log("JS: No valid stops data in the GraphQL response.");
-          Pebble.sendAppMessage({ stopNoFound: 1 });
+          Pebble.sendAppMessage(emptyMessage);
         }
       } else {
         console.log(
           "JS: Error in getting stops from location. Status: " + req.status
         );
-        Pebble.sendAppMessage({ stopNoFound: 1 });
+        Pebble.sendAppMessage(emptyMessage);
       }
     }
   };
 
   req.send(query);
+}
+
+// Entry point for a nearby-stops request (initial `stopMessage` or a "Load more"
+// `stopMore`): resolves the user's location (debug location in the emulator) and
+// fetches the matching page. In screenshot mode the deterministic fixtures stand
+// in: the first page is the fixture list, and a "more" page reports stopNoMore
+// (no further fixtures), mirroring the live path with nothing left to append.
+function handleNearbyStops(mode) {
+  var more = mode === "more";
+  if (screenshotActive) {
+    if (more) {
+      Pebble.sendAppMessage({ stopNoMore: 1 });
+    } else {
+      console.log("JS: Screenshot mode, sending fixture nearby stops.");
+      sendList(fixtures.NEARBY_STOPS);
+    }
+    return;
+  }
+  if (debugLocation && isEmulator()) {
+    console.log("JS: Emulator detected, using debug location: " + debugLocation);
+    getStopsFromLocation(
+      { coords: { latitude: debugLocation[0], longitude: debugLocation[1] } },
+      mode
+    );
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      getStopsFromLocation(pos, mode);
+    },
+    function (err) {
+      console.warn("JS: GPS error (" + err.code + "): " + err.message);
+      // A failed "more" lookup keeps the current list (stopNoMore) rather than
+      // erroring out over the stops already on screen.
+      Pebble.sendAppMessage(more ? { stopNoMore: 1 } : { noGps: 1 });
+    },
+    geolocationOptions
+  );
 }
 
 // Resolves the city the user is in from the feed prefix of the nearest stop and
@@ -563,26 +641,10 @@ Pebble.addEventListener("appmessage", function (e) {
 
   if (e.payload.stopMessage) {
     console.log("JS: Received stopMessage.");
-    if (screenshotActive) {
-      console.log("JS: Screenshot mode, sending fixture nearby stops.");
-      sendList(fixtures.NEARBY_STOPS);
-      return;
-    }
-    if (debugLocation && isEmulator()) {
-      console.log("JS: Emulator detected, using debug location: " + debugLocation);
-      getStopsFromLocation({
-        coords: { latitude: debugLocation[0], longitude: debugLocation[1] },
-      });
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      getStopsFromLocation,
-      (err) => {
-        console.warn("JS: GPS error (" + err.code + "): " + err.message);
-        Pebble.sendAppMessage({ noGps: 1 });
-      },
-      geolocationOptions
-    );
+    handleNearbyStops("load");
+  } else if (e.payload.stopMore) {
+    console.log("JS: Received stopMore.");
+    handleNearbyStops("more");
   } else if (e.payload.lineMessage) {
     console.log(
       "JS: Received lineMessage with stopCode: " + e.payload.lineMessage

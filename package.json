@@ -8,6 +8,7 @@
     "enableMultiJS": true,
     "messageKeys": [
       "stopMessage",
+      "stopMore",
       "stopCode",
       "stopShortCode",
       "stopName",
@@ -16,6 +17,7 @@
       "stopZone",
       "messageEnd",
       "stopNoFound",
+      "stopNoMore",
       "lineMessage",
       "lineRefresh",
       "lineMore",
