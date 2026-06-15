@@ -40,6 +40,15 @@ static bool city_resolved = false;
 // paths from sending it twice.
 static bool city_requested = false;
 
+// True once the JS component has signalled it is ready (jsReady). The city request
+// must never be sent before this: a message sent while the JS side is still loading
+// is dropped by the phone, yet it would still flip city_requested above and so
+// suppress the real send once JS finally comes up — leaving the header stuck on
+// "Loading.." forever. The emulator brings JS up almost instantly (before the
+// splash times out), which is why this only ever bit on real hardware, where the
+// Bluetooth JS bootstrap routinely takes longer than the splash.
+static bool js_ready = false;
+
 // Home menu items. Subtitle is optional; an empty subtitle renders a single
 // vertically centered title (like "Nearby stops"). Icons will be added later.
 struct HomeItem {
@@ -380,8 +389,10 @@ static void home_request_city(void);
 static void home_message_inbox(DictionaryIterator *iter, void *context)
 {
 	// The JS component just came up. This is the earliest point it can serve a
-	// request, so fire the startup city lookup now (unless it already went out).
+	// request without the message being dropped, so remember that JS is ready and
+	// fire the startup city lookup now (unless it already went out).
 	if (dict_find(iter, MESSAGE_KEY_jsReady)) {
+		js_ready = true;
 		if (!city_requested) {
 			home_request_city();
 		}
@@ -473,9 +484,13 @@ void home_window_load(Window *window)
 	// result-so-far, so the menu paints with the right header straight away.
 	home_build_ui(window);
 	app_message_register_inbox_received(home_message_inbox);
-	// Fallback: if the JS jsReady signal was missed (so the request never went
-	// out), send it now that the home window is up — matching the original timing.
-	if (!city_requested) {
+	// Fallback: only if JS is already up but the request has not gone out (e.g. a
+	// failed outbox_begin) do we send it now. We must NOT send before jsReady: on
+	// real hardware the splash often times out and this load runs while the JS side
+	// is still booting, so sending here would be dropped by the phone and would burn
+	// the city_requested guard, blocking the real send the jsReady handler makes a
+	// moment later. While JS is not ready we leave the request to that handler.
+	if (js_ready && !city_requested) {
 		home_request_city();
 	}
 }
@@ -488,6 +503,14 @@ void home_window_appear(Window *window)
 	// Reclaim the AppMessage inbox from whichever window was on top, so a city
 	// reply (e.g. one still in flight) is handled here.
 	app_message_register_inbox_received(home_message_inbox);
+	// If we are back here still not knowing the city, the reply may have landed on a
+	// sub-window's inbox handler while we were away (each data window swaps in its
+	// own) and been lost. Now that our handler is active again, ask once more so the
+	// header can still fill in. Skipped until JS is up (the jsReady handler owns the
+	// first request) and once we have a resolved answer, so it never loops.
+	if (js_ready && !city_resolved) {
+		home_request_city();
+	}
 	if (homeMenuLayer) {
 		menu_layer_reload_data(homeMenuLayer);
 		// Restore the row the user left on before the menu was freed.
