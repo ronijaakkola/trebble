@@ -684,11 +684,14 @@ function handleAddToTimeline(payload) {
     time: when.toISOString(),
     layout: {
       type: "genericPin",
-      // "Bus 40" / "Tram 2" / "Subway 1A" headline; "To <destination>" beneath;
-      // the stop name as the pin's location.
+      // "Bus 40" / "Tram 2" / "Subway 1A" headline, "To <destination>" beneath,
+      // then the originating stop. The stop goes in `body` rather than
+      // locationName: for a sideloaded pin the timeline service only reliably
+      // carries the core genericPin fields (title/subtitle/body) to the watch,
+      // and drops extras like locationName (same reason the custom icon failed).
       title: (typeLabel ? typeLabel + " " : "") + line,
       subtitle: "To " + dir,
-      locationName: stop,
+      body: "From " + stop,
       // A generic system icon: custom per-mode (app://) icons don't currently
       // resolve through the timeline service for a sideloaded app.
       tinyIcon: "system://images/SCHEDULED_EVENT",
