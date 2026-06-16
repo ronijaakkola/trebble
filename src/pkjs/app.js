@@ -675,14 +675,20 @@ function handleAddToTimeline(payload) {
   var id =
     "trebble-" + sanitizeForId(stop) + "-" + sanitizeForId(line) + "-" + sanitizeForId(hhmm);
 
+  // Spell out the mode for the title ("Bus 40", "Tram 2", "Subway 1A").
+  var typeWord = { B: "Bus", T: "Tram", M: "Subway" };
+  var typeLabel = typeWord[mode] || "";
+
   var pin = {
     id: id,
     time: when.toISOString(),
     layout: {
       type: "genericPin",
-      // Route number + destination is the headline; the stop name is the body.
-      title: (line ? line + " " : "") + dir,
-      body: stop,
+      // "Bus 40" / "Tram 2" / "Subway 1A" headline; "To <destination>" beneath;
+      // the stop name as the pin's location.
+      title: (typeLabel ? typeLabel + " " : "") + line,
+      subtitle: "To " + dir,
+      locationName: stop,
       // A generic system icon: custom per-mode (app://) icons don't currently
       // resolve through the timeline service for a sideloaded app.
       tinyIcon: "system://images/SCHEDULED_EVENT",
