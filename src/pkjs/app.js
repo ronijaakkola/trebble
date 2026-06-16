@@ -670,6 +670,10 @@ function handleAddToTimeline(payload) {
   var stop = payload.timelineStop || "";
   var hhmm = payload.timelineTime || "";
   var mode = payload.timelineMode || "";
+  // City/mode stop color computed on the watch (region.c); fall back to the
+  // plain mode colors if it is somehow absent.
+  var bgColor =
+    payload.timelineColor || (mode === "T" || mode === "M" ? "#FF0000" : "#0000AA");
 
   var when = nextOccurrence(hhmm);
   var id =
@@ -696,8 +700,8 @@ function handleAddToTimeline(payload) {
       // resolve through the timeline service for a sideloaded app.
       tinyIcon: "system://images/SCHEDULED_EVENT",
       primaryColor: "#FFFFFF",
-      // Match the app's mode colors: red tram/metro, blue bus (and unknown).
-      backgroundColor: mode === "T" || mode === "M" ? "#FF0000" : "#0000AA",
+      // City/mode stop color, matching the departures header.
+      backgroundColor: bgColor,
     },
   };
 

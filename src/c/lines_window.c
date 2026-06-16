@@ -750,11 +750,21 @@ static void lines_send_timeline_pin(void)
 		return;
 	}
 	char mode[2] = { am_line.type[0] ? am_line.type[0] : stopType, '\0' };
+
+	// City/mode stop color, the same one the departures header uses, sent as an
+	// "#RRGGBB" string for the pin's background. GColor components are 2-bit
+	// (0-3), so scale each to 0-255 (x85). The JS side can't compute this (the
+	// per-city table lives in region.c), so it is resolved here.
+	GColor bg = region_mode_color(stopCode, mode[0]);
+	char color[8];
+	snprintf(color, sizeof(color), "#%02X%02X%02X", bg.r * 85, bg.g * 85, bg.b * 85);
+
 	dict_write_cstring(iter, MESSAGE_KEY_timelineAdd, am_line.code);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineDir, am_line.dir);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineStop, stopName);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineTime, am_line.time);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineMode, mode);
+	dict_write_cstring(iter, MESSAGE_KEY_timelineColor, color);
 	dict_write_end(iter);
 	app_message_outbox_send();
 }
