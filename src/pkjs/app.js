@@ -675,6 +675,15 @@ function handleAddToTimeline(payload) {
   var id =
     "trebble-" + sanitizeForId(stop) + "-" + sanitizeForId(line) + "-" + sanitizeForId(hhmm);
 
+  // The app's own bus/tram/metro icons, declared as publishedMedia in
+  // package.json and referenced here by their app:// name. An unknown mode falls
+  // back to a generic system icon.
+  var iconByMode = {
+    B: "app://images/TIMELINE_BUS",
+    T: "app://images/TIMELINE_TRAM",
+    M: "app://images/TIMELINE_SUBWAY",
+  };
+
   var pin = {
     id: id,
     time: when.toISOString(),
@@ -683,7 +692,7 @@ function handleAddToTimeline(payload) {
       // Route number + destination is the headline; the stop name is the body.
       title: (line ? line + " " : "") + dir,
       body: stop,
-      tinyIcon: "system://images/SCHEDULED_EVENT",
+      tinyIcon: iconByMode[mode] || "system://images/SCHEDULED_EVENT",
       primaryColor: "#FFFFFF",
       // Match the app's mode colors: red tram/metro, blue bus (and unknown).
       backgroundColor: mode === "T" || mode === "M" ? "#FF0000" : "#0000AA",
