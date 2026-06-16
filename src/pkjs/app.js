@@ -1,6 +1,7 @@
 const secrets = require("./secrets");
 const queries = require("./queries");
 const fixtures = require("./fixtures");
+const timeline = require("./timeline");
 
 var url = "https://api.digitransit.fi/routing/v2/finland/gtfs/v1";
 
@@ -631,6 +632,75 @@ function minutesUntilDeparture(serviceDay, departureSecs) {
   return Math.floor((departureEpoch - nowSecs) / 60);
 }
 
+// Resolves an "HH:MM" clock time to the next absolute Date it occurs at. The
+// watch only keeps the clock time of the departure it sends for a timeline pin;
+// since departures shown are upcoming, a time that lands well in the past is
+// tomorrow's service (e.g. a 00:10 departure long-pressed at 23:55).
+function nextOccurrence(hhmm) {
+  var parts = (hhmm || "").split(":");
+  var h = parseInt(parts[0], 10) || 0;
+  var m = parseInt(parts[1], 10) || 0;
+  var when = new Date();
+  when.setHours(h, m, 0, 0);
+  if (when.getTime() < Date.now() - 2 * 3600 * 1000) {
+    when.setDate(when.getDate() + 1);
+  }
+  return when;
+}
+
+// Strips a string down to id-safe characters for use in a stable pin id.
+function sanitizeForId(s) {
+  return (s || "").replace(/[^A-Za-z0-9]/g, "");
+}
+
+// Builds a timeline pin from a long-pressed departure and inserts it as a local
+// user pin (see timeline.js). The pin id is derived from stop + line + clock time
+// so re-adding the same departure updates rather than duplicates it. Only a
+// failure is reported back to the watch (timelineResult); success leaves the
+// watch's optimistic "Added to timeline" confirmation standing.
+function handleAddToTimeline(payload) {
+  // Adding to the timeline is a live user action, not part of the deterministic
+  // screenshot flow, so skip the network round-trip in screenshot mode.
+  if (screenshotActive) {
+    return;
+  }
+
+  var line = payload.timelineAdd || "";
+  var dir = payload.timelineDir || "";
+  var stop = payload.timelineStop || "";
+  var hhmm = payload.timelineTime || "";
+  var mode = payload.timelineMode || "";
+
+  var when = nextOccurrence(hhmm);
+  var id =
+    "trebble-" + sanitizeForId(stop) + "-" + sanitizeForId(line) + "-" + sanitizeForId(hhmm);
+
+  var pin = {
+    id: id,
+    time: when.toISOString(),
+    layout: {
+      type: "genericPin",
+      // Route number + destination is the headline; the stop name is the body.
+      title: (line ? line + " " : "") + dir,
+      body: stop,
+      tinyIcon: "system://images/SCHEDULED_EVENT",
+      primaryColor: "#FFFFFF",
+      // Match the app's mode colors: red tram/metro, blue bus (and unknown).
+      backgroundColor: mode === "T" || mode === "M" ? "#FF0000" : "#0000AA",
+    },
+  };
+
+  console.log("JS: Inserting timeline pin: " + JSON.stringify(pin));
+  timeline.insertUserPin(pin, function (err, body) {
+    if (err) {
+      console.log("JS: Timeline pin insert failed: " + err + " (" + body + ")");
+      Pebble.sendAppMessage({ timelineResult: "Couldn't add to timeline" });
+    } else {
+      console.log("JS: Timeline pin inserted.");
+    }
+  });
+}
+
 Pebble.addEventListener("appmessage", function (e) {
   // The watch tags its requests with screenshotMode in SCREENSHOT_MODE builds.
   // Latch it on first sight; it stays on for the rest of the JS process so every
@@ -688,6 +758,9 @@ Pebble.addEventListener("appmessage", function (e) {
       return;
     }
     handlePinnedStops(e.payload.pinMessage);
+  } else if (typeof e.payload.timelineAdd !== "undefined") {
+    console.log("JS: Received timelineAdd for line " + e.payload.timelineAdd);
+    handleAddToTimeline(e.payload);
   } else {
     console.log("JS: Received unknown message from Pebble!");
   }

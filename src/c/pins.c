@@ -164,29 +164,35 @@ int pins_build_codes_csv(char *buf, int size)
 	return len;
 }
 
-// Toggles the pin for the stop held in am_code/am_name/am_type and records a
-// confirmation message in am_feedback, vibrating to match the outcome.
-static void pins_perform_toggle(void)
+void pins_toggle_feedback(const char *code, const char *name, const char *type,
+                          char *out, int out_size)
 {
 	// Comparing the before/after state distinguishes a genuine pin from an unpin,
 	// and from a pin that was rejected because the list is full.
-	bool was_pinned = pins_is_pinned(am_code);
-	pins_toggle(am_code, am_name, am_type);
-	bool now_pinned = pins_is_pinned(am_code);
+	bool was_pinned = pins_is_pinned(code);
+	pins_toggle(code, name, type);
+	bool now_pinned = pins_is_pinned(code);
 
 	if (was_pinned && !now_pinned) {
-		strncpy(am_feedback, "Stop unpinned", sizeof(am_feedback) - 1);
+		strncpy(out, "Stop unpinned", out_size - 1);
 		vibes_short_pulse();
 	} else if (!was_pinned && now_pinned) {
-		strncpy(am_feedback, "Stop pinned", sizeof(am_feedback) - 1);
+		strncpy(out, "Stop pinned", out_size - 1);
 		vibes_short_pulse();
 	} else {
 		// The list was full, so the stop could not be pinned. Signal the error with
 		// a double vibration.
-		strncpy(am_feedback, "Cannot pin more stops", sizeof(am_feedback) - 1);
+		strncpy(out, "Cannot pin more stops", out_size - 1);
 		vibes_double_pulse();
 	}
-	am_feedback[sizeof(am_feedback) - 1] = '\0';
+	out[out_size - 1] = '\0';
+}
+
+// Toggles the pin for the stop held in am_code/am_name/am_type and records a
+// confirmation message in am_feedback, vibrating to match the outcome.
+static void pins_perform_toggle(void)
+{
+	pins_toggle_feedback(am_code, am_name, am_type, am_feedback, sizeof(am_feedback));
 }
 
 #ifndef PBL_PLATFORM_APLITE

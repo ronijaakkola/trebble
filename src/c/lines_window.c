@@ -3,6 +3,7 @@
 #include "main_window.h"
 #include "error_window.h"
 #include "pins.h"
+#include "feedback_window.h"
 #include "marquee.h"
 #include "region.h"
 
@@ -207,6 +208,17 @@ static void process_line_tuple(Tuple *t)
 
 void lines_message_inbox(DictionaryIterator *iter, void *context)
 {
+#ifndef PBL_PLATFORM_APLITE
+	// The JS side only sends timelineResult when adding a pin failed; surface its
+	// message in place of the optimistic "Added to timeline" confirmation. (On
+	// success it stays silent, so the optimistic toast stands.)
+	Tuple *tl_result = dict_find(iter, MESSAGE_KEY_timelineResult);
+	if (tl_result) {
+		feedback_window_show(tl_result->value->cstring);
+		return;
+	}
+#endif
+
 	if (dict_find(iter, MESSAGE_KEY_noInternet)) {
 		APP_LOG(APP_LOG_LEVEL_WARNING, "JS reported no internet connection!");
 		line_transfer_started = false;
@@ -718,9 +730,91 @@ void lines_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *d
 #endif
 }
 
-// Long-pressing a departure pins/unpins the stop it belongs to, tagged with the
-// stop's vehicle mode so the pinned list shows the right badge. The "Show later"
-// row has no pin action.
+#ifndef PBL_PLATFORM_APLITE
+// The departure the action menu is acting on, copied when the menu opens so the
+// "Add to timeline" action still has the line's details after the row scrolls.
+static struct LineInfo am_line;
+// Confirmation for whichever action ran, shown once the menu finishes closing.
+static char lines_am_feedback[40];
+
+// Sends the selected departure to the JS side, which inserts a local timeline pin
+// for it (see src/pkjs/app.js). The line's own mode tags the pin; an unknown line
+// mode falls back to the stop's. The departure clock time doubles as the pin's
+// timestamp and the stable id, so re-adding the same departure updates rather than
+// duplicates the pin.
+static void lines_send_timeline_pin(void)
+{
+	DictionaryIterator *iter;
+	if (app_message_outbox_begin(&iter) != APP_MSG_OK || iter == NULL) {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "Timeline: outbox unavailable.");
+		return;
+	}
+	char mode[2] = { am_line.type[0] ? am_line.type[0] : stopType, '\0' };
+	dict_write_cstring(iter, MESSAGE_KEY_timelineAdd, am_line.code);
+	dict_write_cstring(iter, MESSAGE_KEY_timelineDir, am_line.dir);
+	dict_write_cstring(iter, MESSAGE_KEY_timelineStop, stopName);
+	dict_write_cstring(iter, MESSAGE_KEY_timelineTime, am_line.time);
+	dict_write_cstring(iter, MESSAGE_KEY_timelineMode, mode);
+	dict_write_end(iter);
+	app_message_outbox_send();
+}
+
+static void lines_am_timeline_performed(ActionMenu *menu, const ActionMenuItem *action, void *context)
+{
+	lines_send_timeline_pin();
+	// Optimistic confirmation: the insert is an async network round-trip on the
+	// phone, so success is assumed here and a failure replaces this toast when the
+	// JS side reports back (timelineResult, handled in lines_message_inbox).
+	strncpy(lines_am_feedback, "Added to timeline", sizeof(lines_am_feedback) - 1);
+	lines_am_feedback[sizeof(lines_am_feedback) - 1] = '\0';
+	vibes_short_pulse();
+}
+
+static void lines_am_pin_performed(ActionMenu *menu, const ActionMenuItem *action, void *context)
+{
+	char type[2] = { stopType, '\0' };
+	pins_toggle_feedback(stopCode, stopName, type, lines_am_feedback, sizeof(lines_am_feedback));
+}
+
+static void lines_am_did_close(ActionMenu *menu, const ActionMenuItem *performed_action, void *context)
+{
+	action_menu_hierarchy_destroy(action_menu_get_root_level(menu), NULL, NULL);
+
+	// Only confirm when an action ran (not when dismissed with Back).
+	if (performed_action != NULL) {
+		feedback_window_show(lines_am_feedback);
+	}
+}
+
+// Opens the departures context menu: "Add to timeline" for the focused departure,
+// plus pin/unpin for its stop. The bar is colored by the stop's mode to match the
+// rest of the app (red tram/metro, blue bus).
+static void lines_show_action_menu(void)
+{
+	bool is_pinned = pins_is_pinned(stopCode);
+
+	ActionMenuLevel *root = action_menu_level_create(2);
+	action_menu_level_add_action(root, "Add to timeline", lines_am_timeline_performed, NULL);
+	action_menu_level_add_action(root, is_pinned ? "Unpin stop" : "Pin stop",
+	                             lines_am_pin_performed, NULL);
+
+	ActionMenuConfig config = (ActionMenuConfig) {
+		.root_level = root,
+		.colors = {
+			.background = COLOR_FALLBACK((stopType == 'T' || stopType == 'M') ? GColorRed : GColorCobaltBlue, GColorBlack),
+			.foreground = GColorWhite,
+		},
+		.align = ActionMenuAlignCenter,
+		.did_close = lines_am_did_close,
+	};
+	action_menu_open(&config);
+}
+#endif // !PBL_PLATFORM_APLITE
+
+// Long-pressing a departure opens a context menu. Everywhere but aplite that menu
+// offers "Add to timeline" (for the focused departure) alongside pin/unpin for its
+// stop. Aplite has no timeline and too little heap for the ActionMenu, so it keeps
+// the lightweight direct pin/unpin toggle. The "Show later" row has no menu.
 void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data)
 {
 #ifdef SHOW_LATER_ENABLED
@@ -728,8 +822,14 @@ void lines_long_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, vo
 		return;
 	}
 #endif
+#ifdef PBL_PLATFORM_APLITE
 	char type[2] = { stopType, '\0' };
 	pins_show_action_menu(stopCode, stopName, type, "Pin stop", "Unpin stop");
+#else
+	// Snapshot the focused departure so the timeline action keeps its details.
+	am_line = lines[cell_index->row];
+	lines_show_action_menu();
+#endif
 }
 
 void setup_lines_layer(Window *window, Layer *window_layer)

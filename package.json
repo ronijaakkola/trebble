@@ -41,7 +41,13 @@
       "cityName",
       "cityUnknown",
       "jsReady",
-      "screenshotMode"
+      "screenshotMode",
+      "timelineAdd",
+      "timelineDir",
+      "timelineStop",
+      "timelineTime",
+      "timelineMode",
+      "timelineResult"
     ],
     "projectType": "native",
     "resources": {

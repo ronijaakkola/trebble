@@ -52,3 +52,10 @@ int pins_build_codes_csv(char *buf, int size);
 // unpin_label when it already is.
 void pins_show_action_menu(const char *code, const char *name, const char *type,
                            const char *pin_label, const char *unpin_label);
+
+// Toggles the pin for the given stop, vibrating to match the outcome, and writes
+// a short confirmation ("Stop pinned" / "Stop unpinned" / "Cannot pin more stops")
+// into out (capped at out_size). Lets another window reuse the pin/unpin action
+// with feedback without going through the single-action menu.
+void pins_toggle_feedback(const char *code, const char *name, const char *type,
+                          char *out, int out_size);
