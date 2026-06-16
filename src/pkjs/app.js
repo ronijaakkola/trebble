@@ -674,8 +674,6 @@ function handleAddToTimeline(payload) {
   // plain mode colors if it is somehow absent.
   var bgColor =
     payload.timelineColor || (mode === "T" || mode === "M" ? "#FF0000" : "#0000AA");
-  // Launch code the watch uses to reopen this stop's departures (0 = unknown).
-  var launchCode = payload.timelineLaunch || 0;
 
   var when = nextOccurrence(hhmm);
   var id =
@@ -705,15 +703,6 @@ function handleAddToTimeline(payload) {
       // City/mode stop color, matching the departures header.
       backgroundColor: bgColor,
     },
-    // Tapping the pin offers "Open Vuoro", which launches the app straight to
-    // this stop's departures (the watch maps the launchCode back to the stop).
-    actions: [
-      {
-        type: "openWatchApp",
-        title: "Open Vuoro",
-        launchCode: launchCode,
-      },
-    ],
   };
 
   console.log("JS: Inserting timeline pin: " + JSON.stringify(pin));

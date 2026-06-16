@@ -11,8 +11,3 @@ Window *home_window_get_window();
 // visibly swapping from "Loading.." to the city after the menu appears. Reads the
 // last known city, registers the city inbox handler, and sends the request.
 void home_window_start_location_lookup();
-
-// True once the JS component has signalled it is ready (jsReady). Lets the
-// startup flow hold off on sending a request (e.g. opening a stop's departures
-// straight from a timeline pin) until the JS side can actually serve it.
-bool home_window_js_ready(void);
