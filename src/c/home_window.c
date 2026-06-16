@@ -465,6 +465,11 @@ static void home_request_city(void)
 // loaded yet) and the message would be dropped. Doing this during the splash gives
 // the reply time to arrive before the menu paints, so the header is usually
 // already final instead of swapping from "Loading.." to the city a moment later.
+bool home_window_js_ready(void)
+{
+	return js_ready;
+}
+
 void home_window_start_location_lookup()
 {
 	// Show the last known city straight away; the fresh lookup updates it.

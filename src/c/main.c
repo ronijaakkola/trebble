@@ -7,6 +7,9 @@
 #include "pins.h"
 #include "pins_window.h"
 #include "feedback_window.h"
+#ifndef PBL_PLATFORM_APLITE
+#include "timeline_launch.h"
+#endif
 
 // Aplite has only ~24KB of app heap, so a 4KB inbox would starve the departures
 // window (its menu then runs out of memory mid-scroll and the app faults). A
@@ -47,6 +50,32 @@ static void app_connection_handler(bool connected) {
 	update_phone_connection(connected);
 }
 
+#ifndef PBL_PLATFORM_APLITE
+// When launched from a timeline pin's "Open app" action, these hold the stop to
+// open and whether that open is still pending. The departures window is pushed
+// over the home menu (so Back returns to the menu, not the nearby-stops list)
+// once the JS component is ready to serve the request.
+static bool pin_launch_pending = false;
+static char pin_launch_code[20];
+static char pin_launch_name[30];
+static char pin_launch_type[2];
+
+// Opens the pinned stop's departures once the JS side is ready, re-arming every
+// 100ms while it is still booting (on real hardware the JS bootstrap routinely
+// outlasts the splash, so this cannot assume readiness when the home menu opens).
+static void open_pin_departures(void *data) {
+	if (!pin_launch_pending) {
+		return;
+	}
+	if (home_window_js_ready()) {
+		pin_launch_pending = false;
+		lines_window_show(pin_launch_code, pin_launch_name, pin_launch_type);
+	} else {
+		app_timer_register(100, open_pin_departures, NULL);
+	}
+}
+#endif
+
 void open_home_screen(void *data) {
 	// Remove splash window from the stack because we don't want to come back to it
 	window_stack_remove(splash_window_get_window(), true);
@@ -60,6 +89,14 @@ void open_home_screen(void *data) {
 		.pebble_app_connection_handler = app_connection_handler
 	});
 	update_phone_connection(connection_service_peek_pebble_app_connection());
+
+#ifndef PBL_PLATFORM_APLITE
+	// Launched from a timeline pin: now that the home menu is on the stack, open
+	// the target stop's departures over it (waiting for JS if it is still booting).
+	if (pin_launch_pending) {
+		open_pin_departures(NULL);
+	}
+#endif
 }
 
 void init()
@@ -87,6 +124,16 @@ void init()
 	// inbox-received handlers when they load.
 	app_message_register_inbox_dropped(app_message_dropped);
 	app_message_open(MAX_INBOX_SIZE, MAX_OUTBOX_SIZE);
+
+#ifndef PBL_PLATFORM_APLITE
+	// Launched from a timeline pin's "Open app" action? Resolve the launch code to
+	// its stop so open_home_screen can jump straight to that stop's departures.
+	if (launch_reason() == APP_LAUNCH_TIMELINE_ACTION) {
+		if (timeline_launch_lookup(launch_get_args(), pin_launch_code, pin_launch_name, pin_launch_type)) {
+			pin_launch_pending = true;
+		}
+	}
+#endif
 
 	// Push first screen to the stack
 	window_stack_push(splash_window_get_window(), true);

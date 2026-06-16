@@ -48,6 +48,7 @@
       "timelineTime",
       "timelineMode",
       "timelineColor",
+      "timelineLaunch",
       "timelineResult"
     ],
     "projectType": "native",

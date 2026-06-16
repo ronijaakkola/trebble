@@ -6,6 +6,9 @@
 #include "feedback_window.h"
 #include "marquee.h"
 #include "region.h"
+#ifndef PBL_PLATFORM_APLITE
+#include "timeline_launch.h"
+#endif
 
 // The "Show later" paging UI is left out of aplite: its ~24KB heap is already
 // tight for the departures view (which is why this window frees its layers when
@@ -759,12 +762,17 @@ static void lines_send_timeline_pin(void)
 	char color[8];
 	snprintf(color, sizeof(color), "#%02X%02X%02X", bg.r * 85, bg.g * 85, bg.b * 85);
 
+	// Register this stop so the pin's "Open app" action can reopen its departures,
+	// and pass the resulting launch code to the JS side to embed in the action.
+	uint32_t launch_code = timeline_launch_register(stopCode, stopName, mode);
+
 	dict_write_cstring(iter, MESSAGE_KEY_timelineAdd, am_line.code);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineDir, am_line.dir);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineStop, stopName);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineTime, am_line.time);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineMode, mode);
 	dict_write_cstring(iter, MESSAGE_KEY_timelineColor, color);
+	dict_write_int(iter, MESSAGE_KEY_timelineLaunch, &launch_code, sizeof(launch_code), false);
 	dict_write_end(iter);
 	app_message_outbox_send();
 }
