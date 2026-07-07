@@ -34,6 +34,8 @@ Produces three things:
   - `04-pins` — pinned list: **4 pins, 2 buses + 1 tram + 1 metro**.
   - `05-departures` — a **tram** stop's departures; the first two lines use the
     minute display (**"now"** and **"3 min"**).
+  - `06-citybikes` — the "City bikes" screen: **4 stations** (Ruoholahti,
+    Hakaniemi, Ooppera, Kauppatori) with available-bike counts **7, 0, 3, 10**.
 
 ## How to run it
 
@@ -171,13 +173,18 @@ Per platform it kills any emulator, installs the **screenshot bundle**, pins the
 clock, then walks the menus:
 
 1. **`01-splash`** — captured immediately after install, before it auto-dismisses.
-2. **`02-home`** — the two-row main menu; "Pinned stops" reads "4 stops".
+2. **`02-home`** — the main menu; "Pinned stops" reads "4 stops". In screenshot
+   mode the fixtures report `cityHasBikes`, so the third "City bikes" row is
+   shown.
 3. **`03-nearby-stops`** — `select` the top row → the fixture stops (bus, metro,
    bus).
 4. **`04-pins`** — `back` to Home, `down`, `select` → the fixture pinned list
    (2 buses, 1 tram, 1 metro), tram first.
 5. **`05-departures`** — `select` the first pin (the tram) → its fixture
    departures, first two lines on the minute display ("now", "3 min").
+6. **`06-citybikes`** — `back` twice to Home (it reopens on the Pinned row),
+   `down` to the "City bikes" row, `select` → the fixture bike stations
+   (Ruoholahti 7, Hakaniemi 0, Ooppera 3, Kauppatori 10).
 
 If a screen comes up still on "Loading..", the watch↔phone round trip was slower
 than the wait; re-run with a larger `TREBBLE_LOAD_WAIT` rather than editing the

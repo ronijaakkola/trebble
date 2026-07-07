@@ -305,6 +305,16 @@ for P in "${PLATFORMS[@]}"; do
     # on the minute display: "now" and "3 min").
     press "$P" select; sleep "$LOAD_WAIT"
     timed_shot "$P" "$DIR/05-departures.png"
+
+    # Back to Home (departures -> pins list -> home; Home reopens on the Pinned
+    # row we left), down to "City bikes" (row 2, shown because the fixtures send
+    # cityHasBikes) -> fixture bike stations (Ruoholahti, Hakaniemi, Ooppera,
+    # Kauppatori; counts 7, 0, 3, 10).
+    press "$P" back; sleep 1
+    press "$P" back; sleep 1
+    press "$P" down; sleep 1
+    press "$P" select; sleep "$LOAD_WAIT"
+    timed_shot "$P" "$DIR/06-citybikes.png"
   else
     # --- live-data fallback (heap-constrained platforms, e.g. aplite) ------
     # The fixture build overflows this platform's heap, so use the shippable
